@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -46,4 +46,4 @@ export const characters = pgTable('characters', {
   image: text('image').notNull().default(''), // file name in the uploads dir
   visible: boolean('visible').notNull().default(true), // shown to readers on the story page
   createdAt: timestamp('created_at').notNull().defaultNow(),
-})
+}, t => [index('characters_story_id_idx').on(t.storyId)])

@@ -11,5 +11,5 @@
 ## Project specifics
 
 - **Database / driver:** PostgreSQL 16 (Docker Compose service `db`) via Drizzle ORM (`postgres` driver), schema in `server/src/schema.ts`.
-- **Migration folder:** none — this project uses `bun run db:push` (`drizzle-kit push`) to sync `schema.ts` straight to the database, no generated `.sql` migration files are tracked. When this changes, update this line and the "idempotent migration" rule above accordingly.
+- **Migration folder:** `server/drizzle/` (drizzle-kit). After editing `schema.ts` run `bun run db:generate`, then make the generated SQL idempotent (`IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object` for constraints) and apply with `bun run db:migrate`. `0000_baseline` was hand-edited this way so it is safe on databases originally created with `drizzle-kit push`.
 - **Timezone / encoding gotchas:** none recorded yet — TODO if one is found.

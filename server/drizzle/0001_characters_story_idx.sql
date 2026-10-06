@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "characters_story_id_idx" ON "characters" USING btree ("story_id");

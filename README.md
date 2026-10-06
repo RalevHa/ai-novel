@@ -30,8 +30,8 @@ bun install
 cp server/.env.example server/.env
 #    แก้ server/.env: ใส่ OPENROUTER_API_KEY, เปลี่ยน JWT_SECRET และ ADMIN_PASSWORD
 
-# 4) สร้างตารางในฐานข้อมูล
-cd server && bun run db:push
+# 4) สร้างตารางในฐานข้อมูล (รันซ้ำได้ ใช้อัปเดตฐานข้อมูลเดิมด้วย)
+cd server && bun run db:migrate
 
 # 5) รัน (เปิดสองเทอร์มินัล)
 cd server && bun run dev      # API
@@ -67,5 +67,7 @@ cd web && bun run dev         # หน้าเว็บ → http://localhost:51
 ```bash
 cd web && bunx vue-tsc --noEmit -p tsconfig.app.json   # ตรวจชนิดข้อมูลหน้าเว็บ (รวมชนิดของ API)
 cd server && bunx tsc --noEmit                         # ตรวจชนิดข้อมูล server
+cd server && bun test                                  # เทสต์ (อยู่ใน server/test)
+cd server && bun run db:generate                       # หลังแก้ schema.ts: สร้างไฟล์ migration ใหม่ใน server/drizzle
 cd web && bunx vite build                              # build หน้าเว็บ
 ```
