@@ -16,6 +16,7 @@ import Modal from '../components/ui/Modal.vue'
 import Pager from '../components/ui/Pager.vue'
 import Tabs from '../components/ui/Tabs.vue'
 import Textarea from '../components/ui/Textarea.vue'
+import { fmtCost } from '../genre'
 import { MODELS } from '../models'
 import { toast, toastError } from '../toast'
 
@@ -207,6 +208,7 @@ const menu = (c: Chapter) => [
       <Button variant="ghost" size="icon" to="/admin/stories" aria-label="กลับ" class="-ml-2"><ArrowLeft class="size-5" /></Button>
       <h1 class="font-serif text-[26px] font-bold">{{ story.title }}</h1>
       <span :class="['rounded-full px-2.5 py-0.5 text-xs', story.published ? 'bg-success/15 text-success' : 'bg-fg/10']">{{ story.published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
+      <span v-if="story.spent" class="muted ml-auto text-sm" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">ใช้ไปแล้ว {{ fmtCost(story.spent) }}</span>
     </div>
 
     <Tabs v-model="tab" :items="[{ value: 'chapters', label: 'ตอน' }, { value: 'characters', label: 'ตัวละคร' }, { value: 'settings', label: 'ตั้งค่าเรื่อง' }]" class="mb-5" />
@@ -247,7 +249,7 @@ const menu = (c: Chapter) => [
             <span class="w-9 shrink-0 text-center tabular-nums text-fg/60">{{ c.no }}</span>
             <span class="min-w-0">
               <span class="block truncate font-serif">{{ c.title || `ตอนที่ ${c.no}` }}</span>
-              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published" class="mr-1" />{{ c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span></span>
+              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published" class="mr-1" />{{ c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span><span v-if="c.cost != null" :title="`${c.tokens?.toLocaleString()} tokens`"> · {{ fmtCost(c.cost) }}</span></span>
             </span>
           </button>
           <Button v-if="!c.published" size="sm" class="hidden sm:inline-flex" @click="patchChapter(c, { published: true })">เผยแพร่</Button>

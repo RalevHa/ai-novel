@@ -11,13 +11,16 @@ import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
 import { fmtDate } from '../genre'
 import { lsGet } from '../ls'
+import { useAuth } from '../stores/auth'
 
 const id = useRoute().params.id as string
+const auth = useAuth()
 const load = () => ok(client.api.stories({ id: Number(id) }).get())
 const story = ref<Awaited<ReturnType<typeof load>> | null>(null), loading = ref(true), error = ref(''), newestFirst = ref(false)
 const tab = ref('toc')
 
-const last = computed(() => Number(lsGet(`last:${id}`)) || 0)
+const remoteLast = ref(0)
+const last = computed(() => remoteLast.value || Number(lsGet(`last:${id}`)) || 0)
 const nos = computed(() => story.value?.chapters.map(c => c.no) ?? [])
 const startNo = computed(() => (nos.value.includes(last.value) ? last.value : nos.value[0]))
 const SIZE = 50, tocPage = ref(1)
@@ -28,6 +31,7 @@ const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 onMounted(async () => {
   try { story.value = await load() } catch (e) { error.value = (e as Error).message }
   loading.value = false
+  if (auth.user) remoteLast.value = (await ok(client.api.me.progress.get()).catch(() => [])).find(p => p.storyId === Number(id))?.no ?? 0
 })
 </script>
 

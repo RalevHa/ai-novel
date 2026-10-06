@@ -17,12 +17,15 @@ const genres = computed(() => [...new Set(stories.value.map(s => s.genre).filter
 const shown = computed(() => genre.value ? stories.value.filter(s => s.genre === genre.value) : stories.value)
 const latest = computed(() => stories.value.map(s => parseDb(s.updatedAt)).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0])
 
-// resume strip: the story/chapter read most recently in this browser
+// resume strip: signed in = what the account read most recently (any device), otherwise this browser's last read
+const remote = ref<{ storyId: number; no: number }[]>([]) // newest first
 const resume = computed(() => {
+  const r = remote.value.find(p => stories.value.some(s => s.id === p.storyId))
+  if (r) return { story: stories.value.find(s => s.id === r.storyId)!, no: r.no }
   try {
-    const r = JSON.parse(lsGet('lastRead') || 'null')
-    const s = r && stories.value.find(x => x.id === r.id)
-    return s ? { story: s, no: r.no as number } : null
+    const l = JSON.parse(lsGet('lastRead') || 'null')
+    const s = l && stories.value.find(x => x.id === l.id)
+    return s ? { story: s, no: l.no as number } : null
   } catch { return null }
 })
 const chip = (on: boolean) => ['rounded-full border px-3.5 py-1.5 text-sm transition-colors', on ? 'border-primary bg-primary text-on-primary' : 'border-line hover:bg-fg/5']
@@ -30,6 +33,7 @@ const chip = (on: boolean) => ['rounded-full border px-3.5 py-1.5 text-sm transi
 onMounted(async () => {
   try { stories.value = await load() } catch (e) { error.value = (e as Error).message }
   loading.value = false
+  if (auth.user) remote.value = await ok(client.api.me.progress.get()).catch(() => [])
 })
 </script>
 

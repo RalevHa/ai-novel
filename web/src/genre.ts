@@ -31,5 +31,8 @@ export const parseDb = (v: string | Date | null | undefined) =>
 export const fmtDate = (v: string | Date | null | undefined) =>
   parseDb(v)?.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) ?? ''
 
+/** OpenRouter credits are USD; chapters cost cents, so keep enough digits to tell them apart. */
+export const fmtCost = (usd: number) => `$${usd.toFixed(usd < 0.1 ? 4 : 2)}`
+
 /** The model often starts titles with "ตอนที่ N:"; the UI already shows the number. */
 export const stripChapterPrefix = (title: string) => title.replace(/^(ตอนที่|บทที่|ตอนท่|ตอน)\s*\d+\s*[:：·\-–]?\s*/, '').trim()

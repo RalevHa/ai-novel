@@ -11,9 +11,10 @@ import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
 import { renderChapter } from '../markdown'
 import { lsGet, lsSet } from '../ls'
+import { useAuth } from '../stores/auth'
 import { setTheme, theme, THEMES, type ThemeName } from '../theme'
 
-const route = useRoute(), router = useRouter()
+const route = useRoute(), router = useRouter(), auth = useAuth()
 const id = computed(() => route.params.id as string)
 const no = computed(() => Number(route.params.no))
 
@@ -48,6 +49,7 @@ watch(() => [id.value, no.value], async () => {
     list.value = s.chapters
     lsSet(`last:${id.value}`, String(no.value))
     lsSet('lastRead', JSON.stringify({ id: Number(id.value), no: no.value }))
+    if (auth.user) client.api.me.progress({ id: Number(id.value) }).put({ no: no.value }).catch(() => {}) // follows the reader across devices
     document.title = `${s.title} · ตอนที่ ${no.value}`
     scrollTo(0, 0)
   } catch (e) { error.value = (e as Error).message }
