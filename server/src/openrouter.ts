@@ -8,9 +8,13 @@ const headers = () => ({ Authorization: `Bearer ${process.env.OPENROUTER_API_KEY
 
 /** One-shot (non-streaming) completion; returns the text. */
 export async function chat(model: string, messages: Msg[]) {
-  const r = await fetch(URL, { method: 'POST', signal: AbortSignal.timeout(180_000), headers: headers(), body: JSON.stringify({ model, messages, max_tokens: 4000 }) })
+  const r = await fetch(URL, { method: 'POST', signal: AbortSignal.timeout(180_000), headers: headers(), body: JSON.stringify({ model, messages, max_tokens: MAX_OUTPUT_TOKENS }) })
   if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${await r.text()}`)
-  return ((await r.json()).choices?.[0]?.message?.content ?? '').trim() as string
+  const choice = (await r.json()).choices?.[0]
+  const text = (choice?.message?.content ?? '').trim() as string
+  // reasoning models spend max_tokens on thinking first; running out leaves an empty answer
+  if (!text && choice?.finish_reason === 'length') throw new Error('โมเดลใช้ token หมดไปกับการคิดจนไม่ได้ตอบ ลองเปลี่ยนเป็นโมเดลที่ไม่ใช่แบบ reasoning หรือเพิ่ม MAX_OUTPUT_TOKENS')
+  return text
 }
 
 /** Stream text deltas from OpenRouter chat completions. */
