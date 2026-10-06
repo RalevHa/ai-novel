@@ -373,6 +373,8 @@ if (import.meta.main) {
   await seedAdmin()
   const sweep = () => sweepOrphans().catch(e => console.error('upload sweep failed', e))
   sweep(); setInterval(sweep, 6 * 60 * 60 * 1000).unref()
-  app.listen(Number(process.env.PORT) || 3000)
+  // idleTimeout is Bun's per-connection silence limit (max 255 s). Non-streaming AI calls (summary, suggest, check) stay silent until the model answers,
+  // and a slow local model easily takes longer than the default, which drops the connection (the browser then sees a 500 from the Vite proxy).
+  app.listen({ port: Number(process.env.PORT) || 3000, idleTimeout: 255 })
   console.log(`🦊 http://localhost:${process.env.PORT || 3000}`)
 }
