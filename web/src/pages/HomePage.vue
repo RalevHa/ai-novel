@@ -28,7 +28,7 @@ const resume = computed(() => {
     return s ? { story: s, no: l.no as number } : null
   } catch { return null }
 })
-const chip = (on: boolean) => ['rounded-full border px-3.5 py-1.5 text-sm transition-colors', on ? 'border-primary bg-primary text-on-primary' : 'border-line hover:bg-fg/5']
+const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full border px-3.5 py-1.5 text-sm transition-colors sm:min-h-9', on ? 'border-primary bg-primary text-on-primary' : 'border-line hover:bg-fg/5']
 
 onMounted(async () => {
   try { stories.value = await load() } catch (e) { error.value = (e as Error).message }

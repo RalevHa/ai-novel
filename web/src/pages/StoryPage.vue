@@ -12,6 +12,7 @@ import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
 import { fmtDate } from '../genre'
 import { lsGet } from '../ls'
+import { setTitle } from '../title'
 import { toast } from '../toast'
 import { useAuth } from '../stores/auth'
 
@@ -37,7 +38,7 @@ const copyFeed = () => navigator.clipboard.writeText(`${location.origin}/api/sto
 const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 
 onMounted(async () => {
-  try { story.value = await load() } catch (e) { error.value = (e as Error).message }
+  try { story.value = await load(); setTitle(story.value.title) } catch (e) { error.value = (e as Error).message }
   loading.value = false
   if (auth.user) remoteLast.value = (await ok(client.api.me.progress.get()).catch(() => [])).find(p => p.storyId === Number(id))?.no ?? 0
 })
@@ -68,7 +69,7 @@ onMounted(async () => {
       <section v-if="tab === 'cast'" aria-label="ตัวละคร">
         <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <li v-for="c in story.characters" :key="c.id">
-            <button type="button" class="block h-full w-full overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25" :aria-label="`ดูข้อมูลของ ${c.name}`" @click="showCharacter(c)">
+            <button type="button" class="block h-full w-full overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25" @click="showCharacter(c)">
               <img v-if="c.image" :src="imageUrl(c.image)" :alt="`รูป ${c.name}`" class="aspect-[3/4] w-full object-cover" loading="lazy" decoding="async" />
               <div v-else class="grid aspect-[3/4] w-full place-items-center bg-secondary/15 font-serif text-5xl font-bold text-secondary" aria-hidden="true">{{ c.name.slice(0, 1) }}</div>
               <div class="p-3">
@@ -105,7 +106,7 @@ onMounted(async () => {
       <ol v-show="tab === 'toc'" class="border-t border-line">
         <li v-for="c in list" :key="c.no" class="border-b border-line">
           <router-link :to="`/story/${id}/read/${c.no}`" class="grid grid-cols-[32px_1fr_auto] items-baseline gap-3 px-2 py-3.5 hover:bg-primary/5 md:grid-cols-[44px_1fr_auto_auto]">
-            <span class="tabular-nums text-fg/50">{{ c.no }}</span>
+            <span class="tabular-nums text-fg/75">{{ c.no }}</span>
             <span :class="['font-serif', c.no === last && 'font-bold']">{{ c.title || `ตอนที่ ${c.no}` }}</span>
             <span v-if="c.no === last" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">อ่านล่าสุด</span><span v-else />
             <span class="muted hidden text-xs md:inline">{{ fmtDate(c.createdAt) }}</span>

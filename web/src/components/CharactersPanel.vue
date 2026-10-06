@@ -117,7 +117,7 @@ const menu = (c: Character) => [
           <span class="flex flex-wrap items-center gap-2">
             <span class="font-serif font-bold">{{ c.name }}</span>
             <span v-if="c.role" class="rounded-full bg-fg/10 px-2 py-0.5 text-xs">{{ c.role }}</span>
-            <span v-if="!c.visible" class="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning"><EyeOff class="size-3" />ซ่อนจากผู้อ่าน</span>
+            <span v-if="!c.visible" class="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-fg"><EyeOff class="size-3" />ซ่อนจากผู้อ่าน</span>
           </span>
           <span v-if="c.profile" class="line-clamp-2 muted mt-1 block text-sm">{{ c.profile }}</span>
           <span v-else class="muted mt-1 block text-sm">ยังไม่มีรายละเอียด</span>

@@ -13,7 +13,7 @@ const current = computed(() => props.chapters.find(c => c.no === model.value))
 
 <template>
   <Listbox v-model="model" as="div" class="relative min-w-0">
-    <ListboxButton aria-label="เลือกตอน"
+    <ListboxButton :aria-label="`เลือกตอน ${current ? label(current) : ''}`"
       class="flex h-10 w-full items-center rounded-lg border border-line bg-surface pl-3 pr-9 text-left text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/25">
       <span class="truncate">{{ current ? label(current) : '' }}</span>
       <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-fg/60" aria-hidden="true" />

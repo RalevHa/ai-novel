@@ -36,6 +36,6 @@ const shown = computed(() => {
         </ComboboxOptions>
       </transition>
     </div>
-    <p v-if="hint" class="mt-1 text-xs text-fg/65">{{ hint }}</p>
+    <p v-if="hint" class="mt-1 text-xs text-fg/75">{{ hint }}</p>
   </Combobox>
 </template>

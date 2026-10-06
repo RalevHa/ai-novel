@@ -58,7 +58,7 @@ const id = `f-${Math.random().toString(36).slice(2, 8)}`
             <div class="flex-1 text-center text-sm font-medium">{{ title }}</div>
             <Button variant="ghost" size="icon" class="size-8" aria-label="เดือนถัดไป" @click="shift(1)"><ChevronRight class="size-4" /></Button>
           </div>
-          <div class="grid grid-cols-7 text-center text-xs text-fg/60">
+          <div class="grid grid-cols-7 text-center text-xs text-fg/75">
             <span v-for="w in ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']" :key="w" class="py-1">{{ w }}</span>
           </div>
           <div class="grid grid-cols-7 gap-y-0.5 text-center text-sm">
@@ -70,7 +70,7 @@ const id = `f-${Math.random().toString(36).slice(2, 8)}`
             </template>
           </div>
           <div class="mt-3 flex items-center gap-2 border-t border-line pt-3 text-sm">
-            <span class="text-fg/65">เวลา</span>
+            <span class="text-fg/75">เวลา</span>
             <input type="number" min="0" max="23" inputmode="numeric" aria-label="ชั่วโมง" :value="pad(cur?.h ?? 8)" class="h-9 w-14 rounded-lg border border-line bg-surface px-2 text-center outline-none focus:border-primary" @change="setTime('h', ($event.target as HTMLInputElement).value)" />
             <span>:</span>
             <input type="number" min="0" max="59" inputmode="numeric" aria-label="นาที" :value="pad(cur?.mi ?? 0)" class="h-9 w-14 rounded-lg border border-line bg-surface px-2 text-center outline-none focus:border-primary" @change="setTime('mi', ($event.target as HTMLInputElement).value)" />
@@ -83,6 +83,6 @@ const id = `f-${Math.random().toString(36).slice(2, 8)}`
         </PopoverPanel>
       </transition>
     </Popover>
-    <p v-if="hint" class="mt-1 text-xs text-fg/65">{{ hint }}</p>
+    <p v-if="hint" class="mt-1 text-xs text-fg/75">{{ hint }}</p>
   </div>
 </template>

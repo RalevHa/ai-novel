@@ -10,11 +10,18 @@ export const theme = ref<ThemeName>(
 )
 export const isDark = computed(() => theme.value === 'ink')
 
+// browser UI colour (address bar on phones) = the page background of each theme; keep in step with --c-bg in styles.css
+const BAR: Record<ThemeName, string> = { paper: '#f3f4f1', sepia: '#f1e7d3', ink: '#0f1624' }
+const paint = (t: ThemeName) => {
+  document.documentElement.dataset.theme = t
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', BAR[t])
+}
+
 export function setTheme(t: ThemeName) {
   theme.value = t
-  document.documentElement.dataset.theme = t
+  paint(t)
   lsSet('theme', t)
 }
 export const toggleTheme = () => setTheme(isDark.value ? 'paper' : 'ink')
 
-document.documentElement.dataset.theme = theme.value
+paint(theme.value)

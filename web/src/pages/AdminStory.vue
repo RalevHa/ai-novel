@@ -22,6 +22,7 @@ import Tabs from '../components/ui/Tabs.vue'
 import Textarea from '../components/ui/Textarea.vue'
 import { fmtCost, fmtDateTime, fromLocalInput, parseDb, toLocalInput } from '../genre'
 import { MODELS } from '../models'
+import { setTitle } from '../title'
 import { toast, toastError } from '../toast'
 
 const id = useRoute().params.id as string
@@ -135,7 +136,7 @@ function applyRewrite() {
 async function refresh() {
   try {
     const [s, r] = await Promise.all([load(), loadChapters()])
-    story.value = s; chapters.value = r.items; total.value = r.total; page.value = r.page
+    story.value = s; setTitle(`จัดการ ${s.title}`); chapters.value = r.items; total.value = r.total; page.value = r.page
     if (!s.nextBeat) fromOutline.value = false
   } catch (e) { toastError(e) }
   loadUsage()
@@ -262,7 +263,7 @@ const menu = (c: Chapter) => [
     <div class="mb-2 flex flex-wrap items-center gap-2">
       <Button variant="ghost" size="icon" to="/admin/stories" aria-label="กลับ" class="-ml-2"><ArrowLeft class="size-5" /></Button>
       <h1 class="font-serif text-[26px] font-bold">{{ story.title }}</h1>
-      <span :class="['rounded-full px-2.5 py-0.5 text-xs', story.published ? 'bg-success/15 text-success' : 'bg-fg/10']">{{ story.published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
+      <span :class="['rounded-full px-2.5 py-0.5 text-xs', story.published ? 'bg-success/15 text-fg' : 'bg-fg/10']">{{ story.published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
       <span v-if="story.spent || usage?.budget" class="muted ml-auto text-sm">
         <span v-if="story.spent" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">เรื่องนี้ใช้ไป {{ fmtCost(story.spent) }}</span>
         <span v-if="usage?.budget" :class="['ml-3', usage.spent >= usage.budget * 0.8 && 'font-medium text-danger']" title="ค่า AI ของตอนที่เขียนเดือนนี้ เทียบกับ MONTHLY_BUDGET_USD">เดือนนี้ {{ fmtCost(usage.spent) }} / {{ fmtCost(usage.budget) }}</span>
@@ -311,9 +312,9 @@ const menu = (c: Chapter) => [
       </div>
       <ul v-if="total" class="divide-y divide-line rounded-xl border border-line bg-surface">
         <li v-for="c in chapters" :key="c.id" class="flex items-center gap-1 pr-2 first:rounded-t-xl last:rounded-b-xl hover:bg-fg/5">
-          <input v-model="selected" type="checkbox" :value="c.id" :aria-label="`เลือกตอนที่ ${c.no}`" class="ml-3 size-4 shrink-0 accent-primary" />
+          <label class="ml-1 grid size-11 shrink-0 cursor-pointer place-items-center"><input v-model="selected" type="checkbox" :value="c.id" :aria-label="`เลือกตอนที่ ${c.no}`" class="size-4 accent-primary" /></label>
           <button type="button" class="flex min-w-0 flex-1 items-center gap-3 p-3 text-left" @click="openEdit(c)">
-            <span class="w-9 shrink-0 text-center tabular-nums text-fg/60">{{ c.no }}</span>
+            <span class="w-9 shrink-0 text-center tabular-nums text-fg/75">{{ c.no }}</span>
             <span class="min-w-0">
               <span class="block truncate font-serif">{{ c.title || `ตอนที่ ${c.no}` }}</span>
               <span class="muted mt-0.5 block text-sm"><Dot :on="c.published && !scheduled(c)" class="mr-1" />{{ scheduled(c) ? `ตั้งเวลา ${fmtDateTime(c.publishAt)}` : c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span><span v-if="c.cost != null" :title="`${c.tokens?.toLocaleString()} tokens`"> · {{ fmtCost(c.cost) }}</span></span>

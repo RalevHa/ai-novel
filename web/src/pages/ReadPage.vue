@@ -9,6 +9,7 @@ import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
+import { setTitle } from '../title'
 import { RATES, useSpeech } from '../tts'
 import { toast } from '../toast'
 import { renderChapter } from '../markdown'
@@ -61,7 +62,7 @@ watch(() => [id.value, no.value], async () => {
     lsSet(`last:${id.value}`, String(no.value))
     lsSet('lastRead', JSON.stringify({ id: Number(id.value), no: no.value }))
     if (auth.user) client.api.me.progress({ id: Number(id.value) }).put({ no: no.value }).catch(() => {}) // follows the reader across devices
-    document.title = `${s.title} · ตอนที่ ${no.value}`
+    setTitle(`${s.title} · ตอนที่ ${no.value}`)
     scrollTo(0, 0)
   } catch (e) { error.value = (e as Error).message }
   loading.value = false
@@ -76,7 +77,7 @@ const onKey = (e: KeyboardEvent) => {
   if (e.key === 'ArrowRight') go(next.value)
 }
 onMounted(() => { addEventListener('scroll', onScroll, { passive: true }); addEventListener('keydown', onKey) })
-onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventListener('keydown', onKey); document.title = 'AI Novel · นิยายที่ AI แต่งไว้อ่าน' })
+onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventListener('keydown', onKey) })
 </script>
 
 <template>
@@ -89,7 +90,7 @@ onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventList
       <Button variant="ghost" :to="`/story/${id}`" class="-ml-3 px-3" aria-label="สารบัญ"><List class="size-5" /><span class="hidden sm:inline">สารบัญ</span></Button>
       <ChapterSelect :chapters="list" :model-value="no" class="mx-2 max-w-[300px] flex-1" @update:model-value="go" />
       <template v-if="speech.supported">
-        <Button v-if="!speech.speaking.value" variant="ghost" class="px-3" aria-label="ฟังเสียงอ่าน" @click="listen"><Volume2 class="size-5" /><span class="hidden sm:inline">ฟัง</span></Button>
+        <Button v-if="!speech.speaking.value" variant="ghost" class="px-3" @click="listen"><Volume2 class="size-5" /><span class="sr-only sm:hidden">ฟังเสียงอ่าน</span><span class="hidden sm:inline">ฟัง</span></Button>
         <template v-else>
           <Button variant="ghost" size="icon" :aria-label="speech.paused.value ? 'อ่านต่อ' : 'พัก'" @click="speech.toggle"><Play v-if="speech.paused.value" class="size-5" /><Pause v-else class="size-5" /></Button>
           <Button variant="ghost" size="icon" aria-label="หยุดอ่าน" @click="speech.stop"><Square class="size-4" /></Button>

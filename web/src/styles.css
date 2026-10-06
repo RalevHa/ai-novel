@@ -30,8 +30,11 @@
 
 @layer components {
   .wrap { @apply mx-auto w-full max-w-[1120px] px-5; }
-  .eyebrow { @apply text-[13px] tracking-wide text-fg/70; }
-  .muted { @apply text-fg/65; }
+  .eyebrow { @apply text-[13px] tracking-wide text-fg/75; }
+  .muted { @apply text-fg/75; }
+  .hit { @apply relative after:absolute after:-inset-2 after:content-['']; }
+  /* the glyph is generated content: it is decoration, not text that links containing it must be named after */
+  .seal::before { content: '物'; }
   .seal { @apply inline-grid size-[30px] place-items-center rounded-md bg-primary font-mincho text-lg font-bold leading-none text-on-primary; }
   .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .line-clamp-4 { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
