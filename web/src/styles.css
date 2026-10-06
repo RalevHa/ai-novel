@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 白磁 paper (default) / 青磁 sepia (reader) / 紺 ink (dark). Values are "r g b" triplets. */
+:root, :root[data-theme='paper'] {
+  --c-bg: 243 244 241; --c-surface: 255 255 255; --c-fg: 30 33 40; --c-line: 221 223 218;
+  --c-primary: 39 68 114; --c-on-primary: 255 255 255; --c-secondary: 94 156 146;
+  --c-success: 63 143 107; --c-warning: 201 138 27; --c-danger: 179 56 44;
+  color-scheme: light;
+}
+:root[data-theme='sepia'] {
+  --c-bg: 241 231 211; --c-surface: 248 240 222; --c-fg: 58 46 34; --c-line: 218 204 176;
+  --c-primary: 107 74 43; --c-on-primary: 255 255 255; --c-secondary: 138 106 62;
+  --c-success: 75 127 88; --c-warning: 176 122 26; --c-danger: 165 56 44;
+  color-scheme: light;
+}
+:root[data-theme='ink'] {
+  --c-bg: 15 22 36; --c-surface: 23 32 52; --c-fg: 231 233 238; --c-line: 42 54 80;
+  --c-primary: 143 176 232; --c-on-primary: 15 22 36; --c-secondary: 127 191 179;
+  --c-success: 111 196 156; --c-warning: 224 168 60; --c-danger: 229 119 108;
+  color-scheme: dark;
+}
+
+@layer base {
+  body { @apply bg-bg font-sans text-fg antialiased; }
+  :focus-visible { @apply outline outline-2 outline-offset-2 outline-primary; border-radius: 4px; }
+  button { @apply cursor-pointer; }
+}
+
+@layer components {
+  .wrap { @apply mx-auto w-full max-w-[1120px] px-5; }
+  .eyebrow { @apply text-[13px] tracking-wide text-fg/70; }
+  .muted { @apply text-fg/65; }
+  .seal { @apply inline-grid size-[30px] place-items-center rounded-md bg-primary font-mincho text-lg font-bold leading-none text-on-primary; }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .line-clamp-4 { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* book cards */
+  .book { @apply block text-inherit no-underline transition-transform duration-200 hover:-translate-y-1 motion-reduce:transition-none motion-reduce:hover:translate-y-0; }
+  .book .cover { box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 8px 18px -8px rgba(0,0,0,.35); transition: box-shadow .2s ease; }
+  .book:hover .cover { box-shadow: 0 2px 4px rgba(0,0,0,.2), 0 16px 28px -10px rgba(0,0,0,.45); }
+  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 32px 22px; }
+  @media (max-width: 480px) { .shelf { grid-template-columns: repeat(2, 1fr); gap: 26px 14px; } }
+
+  /* cover (scales with its own width via container units) */
+  .cover { container-type: inline-size; position: relative; width: 100%; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 3px 6px 6px 3px; color: #fff; background: linear-gradient(155deg, var(--a), var(--b)); }
+  .cover::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4cqw; background: linear-gradient(90deg, rgba(0,0,0,.35), rgba(255,255,255,.12) 60%, transparent); }
+  .cover::after { content: ''; position: absolute; inset: 5cqw 5cqw 5cqw 7cqw; border: 1px solid rgba(255,255,255,.32); pointer-events: none; }
+  .cover .sun { position: absolute; width: 64cqw; aspect-ratio: 1; border-radius: 50%; left: var(--sx); top: var(--sy); background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.28), rgba(255,255,255,.06) 70%); }
+  .cover .kanji { position: absolute; top: 9cqw; right: 11cqw; writing-mode: vertical-rl; font-family: 'Shippori Mincho', serif; font-weight: 700; font-size: 17cqw; line-height: 1; letter-spacing: .12em; text-shadow: 0 1px 8px rgba(0,0,0,.25); }
+  .cover .ttl { position: absolute; left: 12cqw; right: 12cqw; bottom: 20cqw; font-family: 'Noto Serif Thai', serif; font-weight: 700; font-size: 8.6cqw; line-height: 1.35; text-shadow: 0 1px 6px rgba(0,0,0,.3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .cover.no-obi .ttl { bottom: 12cqw; }
+  .cover.has-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cover.has-img::before { z-index: 1; }
+  .cover.has-img::after { display: none; }
+  .cover .obi { position: absolute; left: 0; right: 0; bottom: 0; height: 12.5cqw; display: flex; align-items: center; padding: 0 12cqw; background: rgba(250,250,247,.94); color: #274472; font-weight: 600; font-size: 4.4cqw; letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* reader */
+  .reader-body { font-size: var(--reader-size, 19px); line-height: 2.05; }
+  .reader-body p { margin: 0 0 1.05em; overflow-wrap: anywhere; }
+  .reader-body h2 { @apply font-serif font-bold; font-size: 1.35em; line-height: 1.4; margin: 1.8em 0 .7em; }
+  .reader-body h3 { @apply font-serif font-bold; font-size: 1.15em; line-height: 1.4; margin: 1.5em 0 .6em; }
+  .reader-body blockquote { margin: 1.2em 0; padding: .1em 0 .1em 1em; border-left: 3px solid rgb(var(--c-primary) / .5); color: rgb(var(--c-fg) / .8); }
+  .reader-body blockquote p { margin-bottom: .6em; }
+  .reader-body ul, .reader-body ol { margin: 0 0 1.05em; padding-left: 1.5em; }
+  .reader-body ul { list-style: disc; } .reader-body ol { list-style: decimal; }
+  .reader-body a { @apply text-primary underline underline-offset-2; }
+  .reader-body img { display: block; max-width: 100%; height: auto; margin: 1.6em auto; border-radius: 8px; }
+  /* image figures: width / alignment come from fixed classes, never from text in the chapter */
+  .reader-body figure.fig { margin: 1.8em 0; max-width: 100%; }
+  .reader-body figure.fig img { margin: 0; width: 100%; }
+  .reader-body figure.fig-wauto { width: fit-content; }
+  .reader-body figure.fig-wauto img { width: auto; }
+  .reader-body figure.fig-w30 { width: 30%; } .reader-body figure.fig-w50 { width: 50%; }
+  .reader-body figure.fig-w75 { width: 75%; } .reader-body figure.fig-w100 { width: 100%; }
+  .reader-body figure.fig-center { margin-inline: auto; } .reader-body figure.fig-right { margin-left: auto; margin-right: 0; } .reader-body figure.fig-left { margin-left: 0; margin-right: auto; }
+  .reader-body figcaption { margin-top: .55em; font-size: .85em; line-height: 1.6; text-align: center; color: rgb(var(--c-fg) / .68); overflow-wrap: anywhere; }
+  @media (max-width: 480px) { .reader-body figure.fig-w30 { width: 50%; } }
+  .reader-body hr { border: 0; margin: 2.2em 0; height: auto; text-align: center; color: rgb(var(--c-fg) / .45); }
+  .reader-body hr::before { content: '✦'; letter-spacing: .6em; padding-left: .6em; }
+  .reader-body.sans { @apply font-sans; line-height: 1.95; }
+  .reader-body.serif { @apply font-serif; }
+}

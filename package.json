@@ -1,0 +1,5 @@
+{
+  "name": "ai-novel",
+  "private": true,
+  "workspaces": ["server", "web"]
+}
