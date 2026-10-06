@@ -38,6 +38,7 @@ const storyBody = t.Object({
   premise: t.Optional(t.String()),
   systemPrompt: t.Optional(t.String()),
   outline: t.Optional(t.String()),
+  status: t.Optional(t.Union([t.Literal('ongoing'), t.Literal('completed')])),
   model: t.Optional(t.String()),
   published: t.Optional(t.Boolean()),
 })
@@ -77,12 +78,12 @@ const readerRoutes = new Elysia()
     return file
   })
   .get('/stories', () => db.select({
-    id: stories.id, title: stories.title, synopsis: stories.synopsis, genre: stories.genre, mood: stories.mood, createdAt: stories.createdAt, coverImage: stories.coverImage,
+    id: stories.id, title: stories.title, synopsis: stories.synopsis, genre: stories.genre, mood: stories.mood, status: stories.status, createdAt: stories.createdAt, coverImage: stories.coverImage,
     chapterCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id and ${visibleSql})`,
     updatedAt: sql<string | null>`(select max(coalesce(chapters.publish_at, chapters.created_at)) from chapters where chapters.story_id = stories.id and ${visibleSql})`,
   }).from(stories).where(eq(stories.published, true)).orderBy(desc(stories.id)))
   .get('/stories/:id', async ({ params, status }) => {
-    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { systemPrompt: false, premise: false, model: false } })
+    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, mood: true, status: true, coverImage: true, createdAt: true } })
     if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
     const list = await db.select({ no: chapters.no, title: chapters.title, createdAt: chapters.createdAt }).from(chapters)
       .where(and(eq(chapters.storyId, s.id), visible)).orderBy(asc(chapters.no))

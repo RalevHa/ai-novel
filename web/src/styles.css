@@ -32,6 +32,9 @@
   .wrap { @apply mx-auto w-full max-w-[1120px] px-5; }
   .eyebrow { @apply text-[13px] tracking-wide text-fg/75; }
   .muted { @apply text-fg/75; }
+  /* reading mode: the header leaves while reading down and returns on the way up (see ReadPage); it stays when something inside has focus */
+  .site-header { @apply transition-transform duration-200 motion-reduce:transition-none; }
+  html[data-chrome='hidden'] .site-header:not(:focus-within) { transform: translateY(-100%); }
   .hit { @apply relative after:absolute after:-inset-2 after:content-['']; }
   /* the glyph is generated content: it is decoration, not text that links containing it must be named after */
   .seal::before { content: '物'; }
@@ -60,7 +63,7 @@
   .cover .obi { position: absolute; left: 0; right: 0; bottom: 0; height: 12.5cqw; display: flex; align-items: center; padding: 0 12cqw; background: rgba(250,250,247,.94); color: #274472; font-weight: 600; font-size: 4.4cqw; letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* reader */
-  .reader-body { font-size: var(--reader-size, 19px); line-height: 2.05; }
+  .reader-body { font-size: var(--reader-size, 19px); line-height: var(--reader-lh, 2.05); }
   .reader-body p { margin: 0 0 1.05em; overflow-wrap: anywhere; }
   .reader-body h2 { @apply font-serif font-bold; font-size: 1.35em; line-height: 1.4; margin: 1.8em 0 .7em; }
   .reader-body h3 { @apply font-serif font-bold; font-size: 1.15em; line-height: 1.4; margin: 1.5em 0 .6em; }
@@ -82,6 +85,6 @@
   @media (max-width: 480px) { .reader-body figure.fig-w30 { width: 50%; } }
   .reader-body hr { border: 0; margin: 2.2em 0; height: auto; text-align: center; color: rgb(var(--c-fg) / .45); }
   .reader-body hr::before { content: '✦'; letter-spacing: .6em; padding-left: .6em; }
-  .reader-body.sans { @apply font-sans; line-height: 1.95; }
+  .reader-body.sans { @apply font-sans; line-height: var(--reader-lh, 1.95); }
   .reader-body.serif { @apply font-serif; }
 }

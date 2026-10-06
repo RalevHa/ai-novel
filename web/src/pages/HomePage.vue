@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ArrowRight } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { ArrowRight, Search, X } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Button from '../components/ui/Button.vue'
+import Segmented from '../components/ui/Segmented.vue'
 import { fmtDate, parseDb } from '../genre'
-import { lsGet } from '../ls'
+import { lsGet, lsSet } from '../ls'
+import { isRecent, shelf, SORTS, type Sort } from '../shelf'
 import { useAuth } from '../stores/auth'
 
 const auth = useAuth()
@@ -14,7 +16,13 @@ type Story = Awaited<ReturnType<typeof load>>[number]
 const stories = ref<Story[]>([]), loading = ref(true), error = ref(''), genre = ref<string | null>(null)
 
 const genres = computed(() => [...new Set(stories.value.map(s => s.genre).filter(Boolean))])
-const shown = computed(() => genre.value ? stories.value.filter(s => s.genre === genre.value) : stories.value)
+// search + order are applied in the browser (the shelf is not paginated); the order is remembered
+const query = ref(''), sort = ref<Sort>(SORTS.some(x => x.k === lsGet('homeSort')) ? lsGet('homeSort') as Sort : 'updated')
+watch(sort, v => lsSet('homeSort', v))
+const shown = computed(() => shelf(stories.value, { q: query.value, genre: genre.value, sort: sort.value }))
+const filtering = computed(() => !!query.value.trim() || genre.value !== null)
+const clearFilters = () => { query.value = ''; genre.value = null }
+const badge = (s: Story) => s.status === 'completed' ? 'จบแล้ว' : isRecent(s.updatedAt) ? 'อัปเดตใหม่' : ''
 const latest = computed(() => stories.value.map(s => parseDb(s.updatedAt)).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0])
 
 // resume strip: signed in = what the account read most recently (any device), otherwise this browser's last read
@@ -55,12 +63,28 @@ onMounted(async () => {
     <ArrowRight class="ml-auto size-5 shrink-0" />
   </router-link>
 
+  <div v-if="stories.length > 1" class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div class="relative flex-1">
+      <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg/60" aria-hidden="true" />
+      <input v-model="query" type="text" inputmode="search" autocomplete="off" aria-label="ค้นหานิยาย" placeholder="ค้นหาชื่อเรื่อง แนว หรืออารมณ์"
+        class="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-11 outline-none placeholder:text-fg/40 focus:border-primary focus:ring-2 focus:ring-primary/25" />
+      <button v-if="query" type="button" class="absolute inset-y-0 right-0 grid w-11 place-items-center text-fg/60 hover:text-fg" aria-label="ล้างคำค้นหา" @click="query = ''"><X class="size-4" /></button>
+    </div>
+    <Segmented v-model="sort" :options="SORTS" label="เรียงลำดับ" class="sm:w-72" />
+  </div>
+
   <div v-if="genres.length > 1" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="กรองตามแนว">
     <button type="button" :class="chip(genre === null)" @click="genre = null">ทั้งหมด</button>
     <button v-for="g in genres" :key="g" type="button" :class="chip(genre === g)" @click="genre = g">{{ g }}</button>
   </div>
 
   <div v-if="loading" class="shelf" aria-hidden="true"><div v-for="i in 4" :key="i" class="aspect-[2/3] animate-pulse rounded bg-fg/10" /></div>
+
+  <div v-else-if="!shown.length && filtering" class="py-12 text-center">
+    <div class="font-serif text-xl">ไม่พบเรื่องที่ตรงกับที่ค้นหา</div>
+    <p class="muted mb-4 mt-2">ลองคำอื่น หรือเลือกแนวอื่น</p>
+    <Button variant="outline" @click="clearFilters">ล้างตัวกรอง</Button>
+  </div>
 
   <div v-else-if="!shown.length && !error" class="py-12 text-center">
     <div class="font-serif text-xl">ยังไม่มีนิยายที่เผยแพร่</div>
@@ -70,7 +94,10 @@ onMounted(async () => {
 
   <div v-else class="shelf">
     <router-link v-for="s in shown" :key="s.id" :to="`/story/${s.id}`" class="book">
-      <BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" />
+      <div class="relative">
+        <BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" />
+        <span v-if="badge(s)" class="absolute left-2 top-2 rounded-full bg-surface/95 px-2 py-0.5 text-[11px] font-medium text-fg shadow">{{ badge(s) }}</span>
+      </div>
       <div class="line-clamp-2 mt-3 font-serif font-bold leading-snug">{{ s.title }}</div>
       <div class="muted mt-1 text-xs">{{ s.chapterCount }} ตอน<template v-if="s.mood"> · {{ s.mood }}</template></div>
     </router-link>

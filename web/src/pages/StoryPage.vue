@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowDownUp, BookOpen, Check, Download, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
@@ -18,6 +18,7 @@ import { toast } from '../toast'
 import { useAuth } from '../stores/auth'
 
 const id = useRoute().params.id as string
+const router = useRouter()
 const auth = useAuth()
 const load = () => ok(client.api.stories({ id: Number(id) }).get())
 const story = ref<Awaited<ReturnType<typeof load>> | null>(null), loading = ref(true), error = ref(''), newestFirst = ref(false)
@@ -39,6 +40,23 @@ const startNo = computed(() => (nos.value.includes(last.value) ? last.value : no
 const SIZE = 50, tocPage = ref(1)
 const all = computed(() => newestFirst.value ? [...(story.value?.chapters ?? [])].reverse() : story.value?.chapters ?? [])
 const list = computed(() => all.value.slice((tocPage.value - 1) * SIZE, tocPage.value * SIZE))
+// jump to a chapter by number (long stories)
+const jumpNo = ref('')
+function jump() {
+  const n = Number(jumpNo.value)
+  if (!nos.value.includes(n)) { toast(`ไม่มีตอนที่ ${jumpNo.value}`, 'error'); return }
+  router.push(`/story/${id}/read/${n}`)
+}
+
+// phones: once the main buttons scroll away, a "continue reading" bar stays at the bottom
+const cta = ref<HTMLElement | null>(null), ctaVisible = ref(true)
+let io: IntersectionObserver | null = null
+watch(cta, el => {
+  io?.disconnect()
+  if (el) { io = new IntersectionObserver(([e]) => { ctaVisible.value = e.isIntersecting }); io.observe(el) }
+})
+onBeforeUnmount(() => io?.disconnect())
+
 const copyFeed = () => navigator.clipboard.writeText(`${location.origin}/api/stories/${id}/feed.xml`).then(() => toast('คัดลอกลิงก์ RSS แล้ว วางในแอปอ่าน feed ได้เลย'), () => toast('คัดลอกไม่สำเร็จ', 'error'))
 const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 
@@ -55,14 +73,14 @@ onMounted(async () => {
   <p v-if="error" class="rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">{{ error }}</p>
 
   <div v-if="story" class="grid items-start gap-6 md:grid-cols-[230px_1fr] md:gap-12">
-    <div class="w-[150px] md:sticky md:top-[84px] md:w-auto"><BookCover :title="story.title" :genre="story.genre" :image="story.coverImage" /></div>
+    <div class="w-[44vw] max-w-[190px] md:sticky md:top-[84px] md:w-auto md:max-w-none"><BookCover :title="story.title" :genre="story.genre" :image="story.coverImage" /></div>
 
     <div>
       <div class="eyebrow mb-2">{{ [story.genre, story.mood].filter(Boolean).join(' · ') || 'นิยาย' }}</div>
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">{{ story.title }}</h1>
       <p class="mb-6 mt-4 max-w-[62ch] whitespace-pre-wrap leading-[1.85] text-fg/85">{{ story.synopsis }}</p>
 
-      <div :class="[readCount ? 'mb-5' : 'mb-10', 'flex flex-wrap gap-3']">
+      <div ref="cta" :class="[readCount ? 'mb-5' : 'mb-10', 'flex flex-wrap gap-3']">
         <Button v-if="startNo" size="lg" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
         <Button v-if="nos.length > 1" variant="outline" size="lg" :to="`/story/${id}/read/${nos[nos.length - 1]}`">ตอนล่าสุด</Button>
         <Button v-if="nos.length" variant="ghost" size="lg" :href="`/api/stories/${id}/epub`"><Download class="size-5" />EPUB</Button>
@@ -113,6 +131,10 @@ onMounted(async () => {
       <div v-show="tab === 'toc'" class="mb-2 flex items-center">
         <h2 class="font-serif text-xl font-bold">สารบัญ <span class="muted text-sm font-normal">· {{ story.chapters.length }} ตอน</span></h2>
         <div class="flex-1" />
+        <form v-if="story.chapters.length > 30" class="mr-2" @submit.prevent="jump">
+          <label class="sr-only" for="jump">ไปตอนที่</label>
+          <input id="jump" v-model="jumpNo" inputmode="numeric" pattern="[0-9]*" placeholder="ไปตอนที่…" class="h-11 w-28 rounded-lg border border-line bg-surface px-3 text-sm outline-none placeholder:text-fg/40 focus:border-primary focus:ring-2 focus:ring-primary/25 sm:h-9" />
+        </form>
         <Button v-if="story.chapters.length > 1" variant="ghost" size="sm" @click="flip"><ArrowDownUp class="size-4" />{{ newestFirst ? 'ใหม่ไปเก่า' : 'เก่าไปใหม่' }}</Button>
       </div>
 
@@ -134,4 +156,11 @@ onMounted(async () => {
       <Pager v-show="tab === 'toc'" v-model="tocPage" :size="SIZE" :total="all.length" />
     </div>
   </div>
+
+  <template v-if="story && startNo && !ctaVisible">
+    <div class="h-20 md:hidden" aria-hidden="true" />
+    <div class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+      <Button size="lg" class="w-full" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
+    </div>
+  </template>
 </template>
