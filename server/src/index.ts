@@ -18,7 +18,7 @@ import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
 import { streamChat, type Usage } from './openrouter'
-import { chapters, chapterVersions, characters, readingProgress, stories, users } from './schema'
+import { chapterReads, chapters, chapterVersions, characters, readingProgress, stories, users } from './schema'
 import { restore, snapshot } from './versions'
 import { liveAt, visible, visibleSql } from './visibility'
 
@@ -120,18 +120,28 @@ const readerRoutes = new Elysia()
   }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
 
 // Signed-in readers: where they stopped in each story
+// only chapters readers can see may be recorded, which also keeps the story foreign key valid
+const isLive = async (storyId: number, no: number) => !!(await db.select({ id: chapters.id }).from(chapters).innerJoin(stories, eq(stories.id, chapters.storyId))
+  .where(and(eq(chapters.storyId, storyId), eq(chapters.no, no), visible, eq(stories.published, true))))[0]
+
+// Signed-in readers: where they stopped in each story, and which chapters they have finished
 const meRoutes = new Elysia({ prefix: '/me' })
   .use(auth)
   .guard(userOnly, app => app
-    .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, updatedAt: readingProgress.updatedAt })
+    .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt })
       .from(readingProgress).where(eq(readingProgress.userId, me!.id)).orderBy(desc(readingProgress.updatedAt)))
     .put('/progress/:id', async ({ params, body, me, status }) => {
-      // only published chapters can be bookmarked, which also keeps the story foreign key valid
-      const [c] = await db.select({ id: chapters.id }).from(chapters).innerJoin(stories, eq(stories.id, chapters.storyId))
-        .where(and(eq(chapters.storyId, params.id), eq(chapters.no, body.no), visible, eq(stories.published, true)))
-      if (!c) return status(404, { error: 'ไม่พบข้อมูล' })
-      await db.insert(readingProgress).values({ userId: me!.id, storyId: params.id, no: body.no })
-        .onConflictDoUpdate({ target: [readingProgress.userId, readingProgress.storyId], set: { no: body.no, updatedAt: sql`now()` } })
+      if (!(await isLive(params.id, body.no))) return status(404, { error: 'ไม่พบข้อมูล' })
+      const pos = body.pos ?? null
+      await db.insert(readingProgress).values({ userId: me!.id, storyId: params.id, no: body.no, pos })
+        .onConflictDoUpdate({ target: [readingProgress.userId, readingProgress.storyId], set: { no: body.no, pos, updatedAt: sql`now()` } })
+      return { ok: true }
+    }, { ...id, body: t.Object({ no: t.Integer({ minimum: 1 }), pos: t.Optional(t.Number({ minimum: 0, maximum: 1 })) }) })
+    .get('/reads/:id', async ({ params, me }) => (await db.select({ no: chapterReads.no }).from(chapterReads)
+      .where(and(eq(chapterReads.userId, me!.id), eq(chapterReads.storyId, params.id))).orderBy(asc(chapterReads.no))).map(r => r.no), id)
+    .post('/reads/:id', async ({ params, body, me, status }) => {
+      if (!(await isLive(params.id, body.no))) return status(404, { error: 'ไม่พบข้อมูล' })
+      await db.insert(chapterReads).values({ userId: me!.id, storyId: params.id, no: body.no }).onConflictDoNothing()
       return { ok: true }
     }, { ...id, body: t.Object({ no: t.Integer({ minimum: 1 }) }) }))
 

@@ -29,6 +29,13 @@
       "when": 1791296191176,
       "tag": "0003_versions_schedule_outline",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791300377267,
+      "tag": "0004_read_position_and_reads",
+      "breakpoints": true
     }
   ]
 }

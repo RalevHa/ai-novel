@@ -57,8 +57,17 @@ export const readingProgress = pgTable('reading_progress', {
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
   no: integer('no').notNull(),
+  pos: doublePrecision('pos'), // how far down chapter `no` the reader got (0-1 of its scroll height); null = start
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.userId, t.storyId] })])
+
+// chapters a signed-in reader has finished: the table of contents ticks them off
+export const chapterReads = pgTable('chapter_reads', {
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
+  no: integer('no').notNull(),
+  readAt: timestamp('read_at').notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.userId, t.storyId, t.no] })])
 
 // the text a chapter had before each overwrite, so a bad edit or rewrite can be undone
 export const chapterVersions = pgTable('chapter_versions', {

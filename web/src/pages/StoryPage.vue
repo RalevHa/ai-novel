@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowDownUp, BookOpen, Download, Rss } from 'lucide-vue-next'
+import { ArrowDownUp, BookOpen, Check, Download, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
@@ -12,6 +12,7 @@ import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
 import { fmtDate } from '../genre'
 import { lsGet } from '../ls'
+import { reads as loadReads } from '../readState'
 import { setTitle } from '../title'
 import { toast } from '../toast'
 import { useAuth } from '../stores/auth'
@@ -27,6 +28,10 @@ type Character = NonNullable<typeof story.value>['characters'][number]
 const picked = ref<Character | null>(null), pickedOpen = ref(false) // picked outlives the dialog so the text does not blank out while it fades
 const showCharacter = (c: Character) => { picked.value = c; pickedOpen.value = true }
 
+// chapters this reader has finished (account if signed in, otherwise this browser)
+const readSet = ref<Set<number>>(new Set())
+const readCount = computed(() => story.value?.chapters.filter(c => readSet.value.has(c.no)).length ?? 0)
+
 const remoteLast = ref(0)
 const last = computed(() => remoteLast.value || Number(lsGet(`last:${id}`)) || 0)
 const nos = computed(() => story.value?.chapters.map(c => c.no) ?? [])
@@ -40,6 +45,7 @@ const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 onMounted(async () => {
   try { story.value = await load(); setTitle(story.value.title) } catch (e) { error.value = (e as Error).message }
   loading.value = false
+  loadReads(Number(id)).then(s => { readSet.value = s })
   if (auth.user) remoteLast.value = (await ok(client.api.me.progress.get()).catch(() => [])).find(p => p.storyId === Number(id))?.no ?? 0
 })
 </script>
@@ -56,11 +62,18 @@ onMounted(async () => {
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">{{ story.title }}</h1>
       <p class="mb-6 mt-4 max-w-[62ch] whitespace-pre-wrap leading-[1.85] text-fg/85">{{ story.synopsis }}</p>
 
-      <div class="mb-10 flex flex-wrap gap-3">
+      <div :class="[readCount ? 'mb-5' : 'mb-10', 'flex flex-wrap gap-3']">
         <Button v-if="startNo" size="lg" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
         <Button v-if="nos.length > 1" variant="outline" size="lg" :to="`/story/${id}/read/${nos[nos.length - 1]}`">ตอนล่าสุด</Button>
         <Button v-if="nos.length" variant="ghost" size="lg" :href="`/api/stories/${id}/epub`"><Download class="size-5" />EPUB</Button>
         <Button v-if="nos.length" variant="ghost" size="lg" aria-label="คัดลอกลิงก์ RSS เพื่อติดตามตอนใหม่" @click="copyFeed"><Rss class="size-5" />RSS</Button>
+      </div>
+
+      <div v-if="readCount" class="mb-8 max-w-sm">
+        <div class="muted mb-1.5 text-sm">อ่านแล้ว {{ readCount }}/{{ story.chapters.length }} ตอน</div>
+        <div class="h-1.5 overflow-hidden rounded-full bg-fg/10" role="progressbar" aria-label="ตอนที่อ่านแล้ว" aria-valuemin="0" :aria-valuenow="readCount" :aria-valuemax="story.chapters.length">
+          <div class="h-full rounded-full bg-primary" :style="{ width: `${(readCount / story.chapters.length) * 100}%` }" />
+        </div>
       </div>
 
       <Tabs v-if="story.characters.length" v-model="tab" class="mb-4"
@@ -107,7 +120,11 @@ onMounted(async () => {
         <li v-for="c in list" :key="c.no" class="border-b border-line">
           <router-link :to="`/story/${id}/read/${c.no}`" class="grid grid-cols-[32px_1fr_auto] items-baseline gap-3 px-2 py-3.5 hover:bg-primary/5 md:grid-cols-[44px_1fr_auto_auto]">
             <span class="tabular-nums text-fg/75">{{ c.no }}</span>
-            <span :class="['font-serif', c.no === last && 'font-bold']">{{ c.title || `ตอนที่ ${c.no}` }}</span>
+            <span class="min-w-0">
+              <span :class="['font-serif', c.no === last && 'font-bold']">{{ c.title || `ตอนที่ ${c.no}` }}</span>
+              <template v-if="readSet.has(c.no)"><Check class="ml-1.5 inline size-4 align-[-2px] text-primary" aria-hidden="true" /><span class="sr-only"> (อ่านแล้ว)</span></template>
+              <span class="muted mt-0.5 block text-xs md:hidden">{{ fmtDate(c.createdAt) }}</span>
+            </span>
             <span v-if="c.no === last" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">อ่านล่าสุด</span><span v-else />
             <span class="muted hidden text-xs md:inline">{{ fmtDate(c.createdAt) }}</span>
           </router-link>

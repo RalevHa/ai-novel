@@ -9,15 +9,16 @@ import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
+import { FINISHED, READ_AT, RESTORE_MIN, scrollFraction, scrollTarget } from '../readPos'
+import { flush, getPos, markRead, savePos } from '../readState'
 import { setTitle } from '../title'
 import { RATES, useSpeech } from '../tts'
 import { toast } from '../toast'
 import { renderChapter } from '../markdown'
 import { lsGet, lsSet } from '../ls'
-import { useAuth } from '../stores/auth'
 import { setTheme, theme, THEMES, type ThemeName } from '../theme'
 
-const route = useRoute(), router = useRouter(), auth = useAuth()
+const route = useRoute(), router = useRouter()
 const id = computed(() => route.params.id as string)
 const no = computed(() => Number(route.params.no))
 
@@ -61,23 +62,82 @@ watch(() => [id.value, no.value], async () => {
     list.value = s.chapters
     lsSet(`last:${id.value}`, String(no.value))
     lsSet('lastRead', JSON.stringify({ id: Number(id.value), no: no.value }))
-    if (auth.user) client.api.me.progress({ id: Number(id.value) }).put({ no: no.value }).catch(() => {}) // follows the reader across devices
     setTitle(`${s.title} · ตอนที่ ${no.value}`)
-    scrollTo(0, 0)
+    loading.value = false
+    await nextTick() // the new text must be in the page before we can scroll into it
+    await startReading(Number(id.value), no.value)
   } catch (e) { error.value = (e as Error).message }
   loading.value = false
   if (resume) { resume = false; await nextTick(); listen() }
 }, { immediate: true })
 
-const go = (n: number | null | undefined) => n && router.push(`/story/${id.value}/read/${n}`)
-const onScroll = () => { const h = document.documentElement; progress.value = Math.min(100, (h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)) * 100) }
+// ---- remembering where the reader is (position in the chapter, and which chapters are finished)
+const resumed = ref(false) // the "continuing where you left off" notice
+let tracking = false, markedRead = false, userMoved = false, ro: ResizeObserver | null = null, notice: ReturnType<typeof setTimeout> | undefined
+const movedByUser = () => { userMoved = true }
+const sid = () => Number(id.value)
+
+async function startReading(storyId: number, chapterNo: number) {
+  tracking = markedRead = userMoved = resumed.value = false
+  ro?.disconnect(); clearTimeout(notice)
+  const doc = document.documentElement
+  const saved = await getPos(storyId, chapterNo)
+  if (storyId !== sid() || chapterNo !== no.value) return // the reader moved on while we waited
+  if (saved >= RESTORE_MIN && saved < FINISHED) {
+    const apply = () => scrollTo(0, scrollTarget(saved, doc.scrollHeight, doc.clientHeight))
+    apply()
+    resumed.value = true; notice = setTimeout(() => { resumed.value = false }, 7000)
+    // images and fonts settle after the first paint and move the target: follow until the reader takes over
+    ro = new ResizeObserver(() => { if (!userMoved) apply() }); ro.observe(document.body)
+    setTimeout(() => { ro?.disconnect(); tracking = true }, 1200)
+  } else {
+    scrollTo(0, 0)
+    tracking = true
+  }
+  savePos(storyId, chapterNo, saved < FINISHED ? saved : 0, true) // records which chapter the reader is on
+  if (doc.scrollHeight <= doc.clientHeight + 4) finish(storyId, chapterNo) // fits on one screen: nothing left to scroll
+}
+function finish(storyId: number, chapterNo: number) {
+  if (markedRead) return
+  markedRead = true
+  markRead(storyId, chapterNo)
+}
+function restartFromTop() {
+  userMoved = true; ro?.disconnect(); resumed.value = false
+  scrollTo({ top: 0 })
+  savePos(sid(), no.value, 0, true)
+}
+
+const go = (n: number | null | undefined) => {
+  if (n && n === next.value) finish(sid(), no.value) // moving on counts as having read it
+  return n && router.push(`/story/${id.value}/read/${n}`)
+}
+const onScroll = () => {
+  const h = document.documentElement
+  const f = scrollFraction(h.scrollTop, h.scrollHeight, h.clientHeight)
+  progress.value = f * 100
+  if (!tracking) return
+  savePos(sid(), no.value, f >= FINISHED ? 0 : f) // a finished chapter reopens at the top
+  if (f >= READ_AT) finish(sid(), no.value)
+}
+const onHide = () => { if (document.visibilityState === 'hidden') flush() }
 const onKey = (e: KeyboardEvent) => {
   if ((e.target as HTMLElement)?.closest('input, textarea, [contenteditable]') || e.metaKey || e.ctrlKey) return
+  if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) userMoved = true
   if (e.key === 'ArrowLeft') go(prev.value)
   if (e.key === 'ArrowRight') go(next.value)
 }
-onMounted(() => { addEventListener('scroll', onScroll, { passive: true }); addEventListener('keydown', onKey) })
-onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventListener('keydown', onKey) })
+onMounted(() => {
+  addEventListener('scroll', onScroll, { passive: true }); addEventListener('keydown', onKey)
+  for (const ev of ['wheel', 'touchmove']) addEventListener(ev, movedByUser, { passive: true })
+  addEventListener('visibilitychange', onHide); addEventListener('pagehide', flush)
+})
+onBeforeUnmount(() => {
+  removeEventListener('scroll', onScroll); removeEventListener('keydown', onKey)
+  for (const ev of ['wheel', 'touchmove']) removeEventListener(ev, movedByUser)
+  removeEventListener('visibilitychange', onHide); removeEventListener('pagehide', flush)
+  ro?.disconnect(); clearTimeout(notice); flush()
+})
 </script>
 
 <template>
@@ -132,5 +192,10 @@ onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventList
     </nav>
     <p v-if="!next" class="muted mt-4 text-center text-xs">นี่คือตอนล่าสุด</p>
     <p class="muted mt-1 hidden text-center text-xs md:block">ใช้ปุ่มลูกศรซ้ายและขวาบนคีย์บอร์ดเพื่อเปลี่ยนตอน</p>
+  </div>
+
+  <div v-if="resumed" role="status" class="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-sm items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm shadow-lg">
+    <span class="flex-1">อ่านต่อจากที่ค้างไว้</span>
+    <Button size="sm" variant="outline" @click="restartFromTop">เริ่มจากต้นตอน</Button>
   </div>
 </template>
