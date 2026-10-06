@@ -6,6 +6,7 @@ import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
+import Modal from '../components/ui/Modal.vue'
 import Pager from '../components/ui/Pager.vue'
 import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
@@ -19,6 +20,11 @@ const auth = useAuth()
 const load = () => ok(client.api.stories({ id: Number(id) }).get())
 const story = ref<Awaited<ReturnType<typeof load>> | null>(null), loading = ref(true), error = ref(''), newestFirst = ref(false)
 const tab = ref('toc')
+
+// tapping a character opens a dialog with everything we know about them; the card only shows a teaser
+type Character = NonNullable<typeof story.value>['characters'][number]
+const picked = ref<Character | null>(null), pickedOpen = ref(false) // picked outlives the dialog so the text does not blank out while it fades
+const showCharacter = (c: Character) => { picked.value = c; pickedOpen.value = true }
 
 const remoteLast = ref(0)
 const last = computed(() => remoteLast.value || Number(lsGet(`last:${id}`)) || 0)
@@ -61,17 +67,34 @@ onMounted(async () => {
 
       <section v-if="tab === 'cast'" aria-label="ตัวละคร">
         <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <li v-for="c in story.characters" :key="c.id" class="overflow-hidden rounded-xl border border-line bg-surface">
-            <img v-if="c.image" :src="imageUrl(c.image)" :alt="`รูป ${c.name}`" class="aspect-[3/4] w-full object-cover" loading="lazy" decoding="async" />
-            <div v-else class="grid aspect-[3/4] w-full place-items-center bg-secondary/15 font-serif text-5xl font-bold text-secondary" aria-hidden="true">{{ c.name.slice(0, 1) }}</div>
-            <div class="p-3">
-              <div class="font-serif font-bold leading-snug">{{ c.name }}</div>
-              <div v-if="c.role" class="muted text-xs">{{ c.role }}</div>
-              <p v-if="c.profile" class="muted mt-2 line-clamp-4 text-sm leading-relaxed">{{ c.profile }}</p>
-            </div>
+          <li v-for="c in story.characters" :key="c.id">
+            <button type="button" class="block h-full w-full overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25" :aria-label="`ดูข้อมูลของ ${c.name}`" @click="showCharacter(c)">
+              <img v-if="c.image" :src="imageUrl(c.image)" :alt="`รูป ${c.name}`" class="aspect-[3/4] w-full object-cover" loading="lazy" decoding="async" />
+              <div v-else class="grid aspect-[3/4] w-full place-items-center bg-secondary/15 font-serif text-5xl font-bold text-secondary" aria-hidden="true">{{ c.name.slice(0, 1) }}</div>
+              <div class="p-3">
+                <div class="font-serif font-bold leading-snug">{{ c.name }}</div>
+                <div v-if="c.role" class="muted text-xs">{{ c.role }}</div>
+                <p v-if="c.profile" class="muted mt-2 line-clamp-4 text-sm leading-relaxed">{{ c.profile }}</p>
+              </div>
+            </button>
           </li>
         </ul>
       </section>
+
+      <Modal :open="pickedOpen" :title="picked?.name ?? ''" size="sm" @close="pickedOpen = false">
+        <template v-if="picked">
+          <div class="flex items-center gap-4">
+            <img v-if="picked.image" :src="imageUrl(picked.image)" :alt="`รูป ${picked.name}`" class="aspect-[3/4] w-28 shrink-0 rounded-lg object-cover" decoding="async" />
+            <div v-else class="grid aspect-[3/4] w-28 shrink-0 place-items-center rounded-lg bg-secondary/15 font-serif text-5xl font-bold text-secondary" aria-hidden="true">{{ picked.name.slice(0, 1) }}</div>
+            <div v-if="picked.role" class="min-w-0">
+              <div class="eyebrow">บทบาท</div>
+              <div class="font-serif text-lg font-bold leading-snug">{{ picked.role }}</div>
+            </div>
+          </div>
+          <p v-if="picked.profile" class="mt-4 whitespace-pre-wrap leading-[1.85] text-fg/90">{{ picked.profile }}</p>
+          <p v-else class="muted mt-4 text-sm">ยังไม่มีรายละเอียดของตัวละครนี้</p>
+        </template>
+      </Modal>
 
       <div v-show="tab === 'toc'" class="mb-2 flex items-center">
         <h2 class="font-serif text-xl font-bold">สารบัญ <span class="muted text-sm font-normal">· {{ story.chapters.length }} ตอน</span></h2>
