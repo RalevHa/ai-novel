@@ -49,7 +49,7 @@ const id = `f-${Math.random().toString(36).slice(2, 8)}`
     <Popover class="relative">
       <PopoverButton :id="id" class="flex h-11 w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 text-left outline-none focus:border-primary focus:ring-2 focus:ring-primary/25">
         <CalendarDays class="size-4 shrink-0 text-fg/60" aria-hidden="true" />
-        <span :class="['truncate', !text && 'text-fg/40']">{{ text || 'ไม่ตั้งเวลา' }}</span>
+        <span :class="['truncate', !text && 'text-fg/75']">{{ text || 'ไม่ตั้งเวลา' }}</span>
       </PopoverButton>
       <transition enter-active-class="transition duration-100 ease-out" enter-from-class="scale-95 opacity-0" enter-to-class="scale-100 opacity-100" leave-active-class="transition duration-75 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
         <PopoverPanel v-slot="{ close }" class="absolute z-40 mt-1 w-72 rounded-xl border border-line bg-surface p-3 shadow-lg">

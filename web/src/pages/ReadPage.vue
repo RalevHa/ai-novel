@@ -106,8 +106,10 @@ async function startReading(storyId: number, chapterNo: number) {
   }
   savePos(storyId, chapterNo, saved < FINISHED ? saved : 0, true) // records which chapter the reader is on
   countView(storyId, chapterNo)
-  if (doc.scrollHeight <= doc.clientHeight + 4) finish(storyId, chapterNo) // fits on one screen: nothing left to scroll
+  if (doc.scrollHeight <= doc.clientHeight + 4 || endVisible()) finish(storyId, chapterNo) // the whole text is already on screen: nothing left to read
 }
+// the last line of the text is on screen (the page also has the next-chapter card and footer below it, so this comes before the page's own end)
+const endVisible = () => { const a = article.value; return !!a && a.getBoundingClientRect().bottom <= innerHeight + 24 }
 function finish(storyId: number, chapterNo: number) {
   if (markedRead) return
   markedRead = true
@@ -143,7 +145,7 @@ const onScroll = () => {
   showTop.value = h.scrollTop > innerHeight * 1.5
   if (!tracking) return
   savePos(sid(), no.value, f >= FINISHED ? 0 : f) // a finished chapter reopens at the top
-  if (f >= READ_AT) finish(sid(), no.value)
+  if (f >= READ_AT || endVisible()) finish(sid(), no.value)
 }
 // swipe left / right to change chapter (touch screens); ignores gestures that start on controls or while text is selected
 let touchStart: { x: number; y: number } | null = null
