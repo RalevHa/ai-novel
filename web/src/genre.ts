@@ -31,5 +31,21 @@ export const parseDb = (v: string | Date | null | undefined) =>
 export const fmtDate = (v: string | Date | null | undefined) =>
   parseDb(v)?.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) ?? ''
 
+export const fmtDateTime = (v: string | Date | null | undefined) =>
+  parseDb(v)?.toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) ?? ''
+
+/** DB time (UTC) to the value a <input type="datetime-local"> wants (local time); '' when unset. */
+export function toLocalInput(v: string | Date | null | undefined) {
+  const d = parseDb(v)
+  if (!d) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+/** A datetime-local value (local time) to an ISO string the API accepts; null when empty. */
+export const fromLocalInput = (s: string) => (s ? new Date(s).toISOString() : null)
+
+/** OpenRouter credits are USD; chapters cost cents, so keep enough digits to tell them apart. */
+export const fmtCost = (usd: number) => `$${usd.toFixed(usd < 0.1 ? 4 : 2)}`
+
 /** The model often starts titles with "ตอนที่ N:"; the UI already shows the number. */
 export const stripChapterPrefix = (title: string) => title.replace(/^(ตอนที่|บทที่|ตอนท่|ตอน)\s*\d+\s*[:：·\-–]?\s*/, '').trim()

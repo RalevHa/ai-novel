@@ -3,23 +3,57 @@ type Msg = { role: 'system' | 'user' | 'assistant'; content: string }
 export const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'anthropic/claude-sonnet-4.5'
 // hard ceiling on one chapter's output so a runaway model cannot burn money until the connection times out
 export const MAX_OUTPUT_TOKENS = Number(process.env.MAX_OUTPUT_TOKENS) || 16000
-const URL = 'https://openrouter.ai/api/v1/chat/completions'
-const headers = () => ({ Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' })
+/** What a call cost: OpenRouter reports credits (= USD) in `usage.cost` without being asked; a local server reports tokens only (cost 0). */
+export type Usage = { tokens: number; cost: number }
+const toUsage = (u: any): Usage => ({ tokens: Number(u.total_tokens) || 0, cost: Number(u.cost) || 0 })
 
-/** One-shot (non-streaming) completion; returns the text. */
-export async function chat(model: string, messages: Msg[]) {
-  const r = await fetch(URL, { method: 'POST', signal: AbortSignal.timeout(180_000), headers: headers(), body: JSON.stringify({ model, messages, max_tokens: 4000 }) })
-  if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${await r.text()}`)
-  return ((await r.json()).choices?.[0]?.message?.content ?? '').trim() as string
+const URL = 'https://openrouter.ai/api/v1/chat/completions'
+const LOCAL = 'local:'
+const isLocal = (model: string) => model.startsWith(LOCAL)
+
+/**
+ * One chat-completions request. A model written `local:<name>` goes to an OpenAI-compatible server on this machine
+ * (Ollama unless LOCAL_BASE_URL says otherwise); anything else goes to OpenRouter.
+ */
+async function send(model: string, body: { messages: Msg[]; stream?: boolean }, signal: AbortSignal) {
+  const local = isLocal(model)
+  const base = (process.env.LOCAL_BASE_URL || 'http://localhost:11434/v1').replace(/\/$/, '')
+  const key = local ? process.env.LOCAL_API_KEY : process.env.OPENROUTER_API_KEY
+  let r: Response
+  try {
+    r = await fetch(local ? `${base}/chat/completions` : URL, {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', ...(key && { Authorization: `Bearer ${key}` }) },
+      // local servers only report usage on a stream when asked; OpenRouter always does
+      body: JSON.stringify({ ...body, model: local ? model.slice(LOCAL.length) : model, max_tokens: MAX_OUTPUT_TOKENS, ...(local && body.stream && { stream_options: { include_usage: true } }) }),
+    })
+  } catch (e) {
+    if (local && !['AbortError', 'TimeoutError'].includes((e as Error).name)) throw new Error(`เชื่อมต่อโมเดลในเครื่องที่ ${base} ไม่ได้ (เปิด Ollama อยู่หรือเปล่า?)`)
+    throw e
+  }
+  if (!r.ok) throw new Error(`${local ? 'Local model' : 'OpenRouter'} ${r.status}: ${await r.text()}`)
+  return r
 }
 
-/** Stream text deltas from OpenRouter chat completions. */
-export async function* streamChat(model: string, messages: Msg[]) {
+/** One-shot (non-streaming) completion; returns the text. `onUsage` receives the cost when the provider reports it. */
+export async function chat(model: string, messages: Msg[], onUsage?: (u: Usage) => void) {
+  // a local model may need minutes to read a long chapter before it answers
+  const r = await send(model, { messages }, AbortSignal.timeout(isLocal(model) ? 600_000 : 180_000))
+  const body = await r.json()
+  if (body.usage) onUsage?.(toUsage(body.usage))
+  const choice = body.choices?.[0]
+  const text = (choice?.message?.content ?? '').trim() as string
+  // reasoning models spend max_tokens on thinking first; running out leaves an empty answer
+  if (!text && choice?.finish_reason === 'length') throw new Error('โมเดลใช้ token หมดไปกับการคิดจนไม่ได้ตอบ ลองเปลี่ยนเป็นโมเดลที่ไม่ใช่แบบ reasoning หรือเพิ่ม MAX_OUTPUT_TOKENS')
+  return text
+}
+
+/** Stream text deltas from chat completions. `onUsage` fires on the final chunk, so never when the caller stops early. */
+export async function* streamChat(model: string, messages: Msg[], onUsage?: (u: Usage) => void) {
   // own controller: aborted when the consumer stops iterating (client disconnect / stop button)
   const ac = new AbortController()
   try {
-    const r = await fetch(URL, { method: 'POST', signal: ac.signal, headers: headers(), body: JSON.stringify({ model, messages, stream: true, max_tokens: MAX_OUTPUT_TOKENS }) })
-    if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${await r.text()}`)
+    const r = await send(model, { messages, stream: true }, ac.signal)
 
     const dec = new TextDecoder()
     let buf = ''
@@ -30,7 +64,9 @@ export async function* streamChat(model: string, messages: Msg[]) {
       for (const l of lines) {
         if (!l.startsWith('data: ') || l.includes('[DONE]')) continue
         try {
-          const t = JSON.parse(l.slice(6)).choices?.[0]?.delta?.content
+          const j = JSON.parse(l.slice(6))
+          if (j.usage) onUsage?.(toUsage(j.usage))
+          const t = j.choices?.[0]?.delta?.content
           if (t) yield t as string
         } catch {}
       }

@@ -1,0 +1,1 @@
+ALTER TABLE "stories" ADD COLUMN IF NOT EXISTS "status" text DEFAULT 'ongoing' NOT NULL;

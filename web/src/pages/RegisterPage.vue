@@ -27,6 +27,6 @@ async function submit() {
       <p v-if="error" class="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{{ error }}</p>
       <Button type="submit" size="lg" class="w-full" :loading="busy">สมัครสมาชิก</Button>
     </form>
-    <p class="mt-5 text-sm">มีบัญชีแล้ว? <router-link to="/login" class="text-primary underline underline-offset-2">เข้าสู่ระบบ</router-link></p>
+    <p class="mt-5 text-sm">มีบัญชีแล้ว? <router-link to="/login" class="-my-3 inline-block py-3 text-primary underline underline-offset-2">เข้าสู่ระบบ</router-link></p>
   </AuthShell>
 </template>

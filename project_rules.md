@@ -8,8 +8,8 @@
 - **Name:** AI Novel
 - **Stack:** Bun workspace monorepo — `server/` (Elysia + Drizzle ORM + PostgreSQL, port 3000) and `web/` (Vue 3 + Vite + Pinia + Tailwind CSS + Tiptap, port 5173). Web imports API types directly from `server/src` via Eden Treaty, so both must stay in the same repo.
 - **Purpose:** Web novel reader where an admin has AI (via OpenRouter) write chapters; readers browse stories, chapters, and characters with a themeable reading view.
-- **Entry points / how to run:** `docker compose up -d` (Postgres) → `bun install` at repo root → `cd server && bun run db:push` → `cd server && bun run dev` (API) and `cd web && bun run dev` (web, http://localhost:5173). Config via `server/.env` (copy from `server/.env.example`).
-- **Test / lint command:** no test runner configured. Type-check with `cd web && bunx vue-tsc --noEmit -p tsconfig.app.json` and `cd server && bunx tsc --noEmit`. Build check: `cd web && bunx vite build`.
+- **Entry points / how to run:** `docker compose up -d` (Postgres) → `bun install` at repo root → `cd server && bun run db:migrate` → `cd server && bun run dev` (API) and `cd web && bun run dev` (web, http://localhost:5173). Config via `server/.env` (copy from `server/.env.example`).
+- **Test / lint command:** `cd server && bun test` and `cd web && bun test` (tests live in `server/test/` and `web/test/`). Type-check with `cd web && bunx vue-tsc --noEmit -p tsconfig.app.json` and `cd server && bunx tsc --noEmit`. Build check: `cd web && bunx vite build`.
 
 ## Conventions
 

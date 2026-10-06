@@ -11,9 +11,12 @@ export const FULL_CHAPTERS = 2
 
 type Story = typeof stories.$inferSelect
 
+/** First `n` characters of a chapter's text without its images (SQL, so the full text never leaves the database). */
+export const excerptSql = (n: number) => sql<string>`left(regexp_replace(${chapters.content}, '!\\[[^\\]]*\\]\\(([^)"]|"[^"]*")*\\)', '', 'g'), ${n})`
+
 /** One line per chapter before `beforeNo` (all chapters if omitted): its recap, or its opening when no recap exists yet. */
 export async function loadRecap(storyId: number, beforeNo?: number) {
-  const rows = await db.select({ no: chapters.no, summary: chapters.summary, excerpt: sql<string>`left(regexp_replace(${chapters.content}, '!\\[[^\\]]*\\]\\(([^)"]|"[^"]*")*\\)', '', 'g'), 400)` }).from(chapters)
+  const rows = await db.select({ no: chapters.no, summary: chapters.summary, excerpt: excerptSql(400) }).from(chapters)
     .where(and(eq(chapters.storyId, storyId), beforeNo === undefined ? undefined : lt(chapters.no, beforeNo))).orderBy(asc(chapters.no))
   return rows.map(c => ({ no: c.no, hasSummary: !!c.summary, text: c.summary || c.excerpt.replace(/\s+/g, ' ').trim() + '…' }))
 }
@@ -22,15 +25,19 @@ export async function loadCast(storyId: number) {
   return db.select().from(characters).where(eq(characters.storyId, storyId)).orderBy(asc(characters.id))
 }
 
-export async function buildContext(story: Story, instruction?: string) {
-  const full = (await db.select().from(chapters).where(eq(chapters.storyId, story.id)).orderBy(desc(chapters.no)).limit(FULL_CHAPTERS)).reverse()
+export const castLines = (cast: Awaited<ReturnType<typeof loadCast>>) =>
+  cast.map(c => `- ${c.name}${c.role ? ` (${c.role})` : ''}${c.profile ? `: ${c.profile.replace(/\s+/g, ' ').trim()}` : ''}`).join('\n')
+
+/** `at`: build the context for (re)writing chapter number `at`, seeing only the chapters before it. Omitted = the next new chapter. */
+export async function buildContext(story: Story, instruction?: string, at?: number) {
+  const full = (await db.select().from(chapters).where(and(eq(chapters.storyId, story.id), at === undefined ? undefined : lt(chapters.no, at))).orderBy(desc(chapters.no)).limit(FULL_CHAPTERS)).reverse()
   // chapters without a summary fall back to their opening, so nothing silently drops out of context
   const older = full.length ? await loadRecap(story.id, full[0].no) : []
   const cast = await loadCast(story.id)
-  const no = (full[full.length - 1]?.no ?? 0) + 1
+  const no = at ?? (full[full.length - 1]?.no ?? 0) + 1
 
   const recap = older.map(c => `ตอนที่ ${c.no}: ${c.text}`).join('\n')
-  const castText = cast.map(c => `- ${c.name}${c.role ? ` (${c.role})` : ''}${c.profile ? `: ${c.profile.replace(/\s+/g, ' ').trim()}` : ''}`).join('\n')
+  const castText = castLines(cast)
   const sys = [
     story.systemPrompt || DEFAULT_SYSTEM_PROMPT,
     story.genre && `แนว: ${story.genre}`,
