@@ -6,6 +6,7 @@ import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
+import Pager from '../components/ui/Pager.vue'
 import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
 import { fmtDate } from '../genre'
@@ -19,7 +20,10 @@ const tab = ref('toc')
 const last = computed(() => Number(lsGet(`last:${id}`)) || 0)
 const nos = computed(() => story.value?.chapters.map(c => c.no) ?? [])
 const startNo = computed(() => (nos.value.includes(last.value) ? last.value : nos.value[0]))
-const list = computed(() => newestFirst.value ? [...(story.value?.chapters ?? [])].reverse() : story.value?.chapters ?? [])
+const SIZE = 50, tocPage = ref(1)
+const all = computed(() => newestFirst.value ? [...(story.value?.chapters ?? [])].reverse() : story.value?.chapters ?? [])
+const list = computed(() => all.value.slice((tocPage.value - 1) * SIZE, tocPage.value * SIZE))
+const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 
 onMounted(async () => {
   try { story.value = await load() } catch (e) { error.value = (e as Error).message }
@@ -64,7 +68,7 @@ onMounted(async () => {
       <div v-show="tab === 'toc'" class="mb-2 flex items-center">
         <h2 class="font-serif text-xl font-bold">สารบัญ <span class="muted text-sm font-normal">· {{ story.chapters.length }} ตอน</span></h2>
         <div class="flex-1" />
-        <Button v-if="story.chapters.length > 1" variant="ghost" size="sm" @click="newestFirst = !newestFirst"><ArrowDownUp class="size-4" />{{ newestFirst ? 'ใหม่ไปเก่า' : 'เก่าไปใหม่' }}</Button>
+        <Button v-if="story.chapters.length > 1" variant="ghost" size="sm" @click="flip"><ArrowDownUp class="size-4" />{{ newestFirst ? 'ใหม่ไปเก่า' : 'เก่าไปใหม่' }}</Button>
       </div>
 
       <ol v-show="tab === 'toc'" class="border-t border-line">
@@ -78,6 +82,7 @@ onMounted(async () => {
         </li>
         <li v-if="!list.length" class="muted py-4">ยังไม่มีตอนที่เผยแพร่</li>
       </ol>
+      <Pager v-show="tab === 'toc'" v-model="tocPage" :size="SIZE" :total="all.length" />
     </div>
   </div>
 </template>

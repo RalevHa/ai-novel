@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff, EllipsisVertical, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
@@ -10,19 +10,22 @@ import Button from '../components/ui/Button.vue'
 import Dot from '../components/ui/Dot.vue'
 import DropMenu from '../components/ui/DropMenu.vue'
 import Modal from '../components/ui/Modal.vue'
+import Pager from '../components/ui/Pager.vue'
 import { toastError } from '../toast'
 
-const load = () => ok(client.api.admin.stories.get())
-type Row = Awaited<ReturnType<typeof load>>[number]
+const page = ref(1), size = ref(20), total = ref(0)
+const load = () => ok(client.api.admin.stories.get({ query: { page: page.value, size: size.value } }))
+type Row = Awaited<ReturnType<typeof load>>['items'][number]
 const router = useRouter()
 const rows = ref<Row[]>([]), loading = ref(true), dialog = ref(false), busy = ref(false)
 const del = ref<Row | null>(null)
 
 const refresh = async () => {
-  try { rows.value = await load() } catch (e) { toastError(e) }
+  try { const r = await load(); rows.value = r.items; total.value = r.total; page.value = r.page } catch (e) { toastError(e) }
   loading.value = false
 }
 onMounted(refresh)
+watch(page, refresh)
 
 async function create(body: StoryInput) {
   busy.value = true
@@ -78,6 +81,8 @@ const menu = (r: Row) => [
     <p class="muted mb-4 mt-2">สร้างเรื่องแรก แล้วให้ AI เขียนตอนแรกให้</p>
     <Button @click="dialog = true"><Plus class="size-5" />สร้างเรื่องใหม่</Button>
   </div>
+
+  <Pager v-if="!loading" v-model="page" :size="size" :total="total" />
 
   <button v-if="rows.length" type="button" class="fixed bottom-20 right-4 z-20 grid size-14 place-items-center rounded-full bg-primary text-on-primary shadow-lg md:hidden" aria-label="สร้างเรื่องใหม่" @click="dialog = true"><Plus class="size-6" /></button>
 

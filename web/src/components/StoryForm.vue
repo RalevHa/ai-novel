@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
+import { MODELS } from '../models'
 import Button from './ui/Button.vue'
 import Input from './ui/Input.vue'
 import Switch from './ui/Switch.vue'
@@ -16,7 +17,7 @@ const f = reactive<StoryInput>({
   title: '', synopsis: '', genre: '', mood: '', premise: '', systemPrompt: '', model: '', published: false,
   ...props.initial,
 })
-const models = ['anthropic/claude-sonnet-4.5', 'google/gemini-2.5-pro', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat-v3.1', 'openai/gpt-5']
+const models = MODELS
 </script>
 
 <template>

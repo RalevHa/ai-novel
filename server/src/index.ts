@@ -1,5 +1,5 @@
 import { cors } from '@elysiajs/cors'
-import { and, asc, desc, eq, getTableColumns, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, max, sql } from 'drizzle-orm'
 import { join } from 'node:path'
 import { Elysia, t } from 'elysia'
 import { adminOnly, auth, seedAdmin } from './auth'
@@ -7,7 +7,8 @@ import { addChapter, summarizeChapter } from './chapters'
 import { suggestCharacters } from './characters'
 import { buildContext } from './context'
 import { loopStart } from './guard'
-import { imageNames } from './markdown'
+import { imageNames, stripImages } from './markdown'
+import { pageQuery, paging } from './paging'
 import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
@@ -90,17 +91,33 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       return (await db.update(users).set(body).where(eq(users.id, params.id)).returning(publicUser))[0]
     }, { ...id, body: t.Object({ role: t.Union([t.Literal('admin'), t.Literal('user')]) }) })
 
-    .get('/stories', () => db.select({
-      ...getTableColumns(stories),
-      chapterCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id)`,
-      draftCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id and not chapters.published)`,
-    }).from(stories).orderBy(desc(stories.id)))
+    // list rows only: the heavy text columns (premise, system prompt) are loaded by GET /stories/:id
+    .get('/stories', async ({ query }) => {
+      const total = await db.$count(stories)
+      const { page, size, offset } = paging(query, total, 'first', 20)
+      const items = await db.select({
+        id: stories.id, title: stories.title, genre: stories.genre, coverImage: stories.coverImage, published: stories.published,
+        chapterCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id)`,
+        draftCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id and not chapters.published)`,
+      }).from(stories).orderBy(desc(stories.id)).limit(size).offset(offset)
+      return { items, total, page, size }
+    }, { query: pageQuery })
     .post('/stories', async ({ body, me }) => (await db.insert(stories).values({ ...body, authorId: me!.id }).returning())[0], { body: storyBody })
     .get('/stories/:id', async ({ params, status }) => {
       const s = await db.query.stories.findFirst({ where: eq(stories.id, params.id) })
       if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
-      return { ...s, chapters: await db.select().from(chapters).where(eq(chapters.storyId, s.id)).orderBy(asc(chapters.no)) }
+      const [{ last }] = await db.select({ last: max(chapters.no) }).from(chapters).where(eq(chapters.storyId, s.id))
+      const noSummary = await db.select({ id: chapters.id }).from(chapters).where(and(eq(chapters.storyId, s.id), eq(chapters.summary, ''))).orderBy(asc(chapters.no))
+      return { ...s, nextNo: (last ?? 0) + 1, missingSummaryIds: noSummary.map(c => c.id) }
     }, id)
+    // chapter rows without the text, newest page first when `page` is omitted; GET /chapters/:id loads one in full
+    .get('/stories/:id/chapters', async ({ params, query }) => {
+      const total = await db.$count(chapters, eq(chapters.storyId, params.id))
+      const { page, size, offset } = paging(query, total, 'last')
+      const items = await db.select({ id: chapters.id, no: chapters.no, title: chapters.title, published: chapters.published, createdAt: chapters.createdAt, hasSummary: sql<boolean>`${chapters.summary} <> ''` })
+        .from(chapters).where(eq(chapters.storyId, params.id)).orderBy(asc(chapters.no)).limit(size).offset(offset)
+      return { items, total, page, size }
+    }, { ...id, query: pageQuery })
     .patch('/stories/:id', async ({ params, body }) => (await db.update(stories).set(body).where(eq(stories.id, params.id)).returning())[0], { ...id, body: t.Partial(storyBody) })
     .delete('/stories/:id', async ({ params }) => {
       const story = await db.query.stories.findFirst({ where: eq(stories.id, params.id) })
@@ -161,12 +178,46 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       return { image: '' }
     }, id)
 
+    .get('/chapters/:id', async ({ params, status }) => (await db.query.chapters.findFirst({ where: eq(chapters.id, params.id) })) ?? status(404, { error: 'ไม่พบข้อมูล' }), id)
     .patch('/chapters/:id', async ({ params, body }) => {
       const before = body.content === undefined ? null : await db.query.chapters.findFirst({ where: eq(chapters.id, params.id) })
       const [row] = await db.update(chapters).set(body).where(eq(chapters.id, params.id)).returning()
       if (before && row) { const keep = new Set(imageNames(row.content)); await pruneUnused(imageNames(before.content).filter(n => !keep.has(n))) }
       return row
     }, { ...id, body: t.Partial(t.Object({ title: t.String(), content: t.String(), summary: t.String(), published: t.Boolean() })) })
+    // publish / hide several chapters of one story at once
+    .patch('/stories/:id/chapters', async ({ params, body }) => {
+      const rows = await db.update(chapters).set({ published: body.published })
+        .where(and(eq(chapters.storyId, params.id), inArray(chapters.id, body.ids))).returning({ id: chapters.id })
+      return { updated: rows.length }
+    }, { ...id, body: t.Object({ ids: t.Array(t.Integer(), { minItems: 1 }), published: t.Boolean() }) })
+    // Streams a fresh version of an existing chapter written by `model`. Nothing is saved: the admin previews it and applies it in the editor.
+    .post('/chapters/:id/rewrite', async function* ({ params, body, set }) {
+      const c = await db.query.chapters.findFirst({ where: eq(chapters.id, params.id) })
+      const story = c && await db.query.stories.findFirst({ where: eq(stories.id, c.storyId) })
+      if (!c || !story) { set.status = 404; yield 'ไม่พบตอนนี้'; return }
+
+      const note = body.instruction?.trim()
+      const ask = [
+        `เขียนตอนที่ ${c.no} ใหม่ทั้งตอน คงเหตุการณ์ ตัวละคร และลำดับเรื่องตามฉบับเดิม แต่เรียบเรียงด้วยสำนวนของคุณ`,
+        c.instruction && `คำสั่งเดิมของตอนนี้: ${c.instruction}`,
+        note && `คำแนะนำเพิ่มเติม: ${note}`,
+        `ฉบับเดิม:\n${stripImages(c.content).slice(0, 30_000)}`,
+      ].filter(Boolean).join('\n\n')
+      const ctx = await buildContext(story, ask, c.no)
+
+      let acc = ''
+      try {
+        for await (const d of streamChat(body.model?.trim() || ctx.model, ctx.messages)) {
+          acc += d; yield d
+          if (loopStart(acc) !== -1) { yield '\n\n⚠️ โมเดลเริ่มตอบวนซ้ำ จึงหยุดให้'; break }
+        }
+      } catch (e) {
+        // before any text: a real HTTP error the client can show; after: a marker inside the preview
+        if (!acc) set.status = 502
+        yield `${acc ? '\n\n⚠️ ' : ''}${(e as Error).message}`
+      }
+    }, { ...id, body: t.Object({ model: t.Optional(t.String()), instruction: t.Optional(t.String()) }) })
     .post('/chapters/:id/summarize', async ({ params, status }) => {
       try { return { summary: await summarizeChapter(params.id) } }
       catch (e) { return status(502, { error: (e as Error).message }) }

@@ -13,17 +13,22 @@ import DropMenu from '../components/ui/DropMenu.vue'
 import Input from '../components/ui/Input.vue'
 import RichEditor from '../components/RichEditor.vue'
 import Modal from '../components/ui/Modal.vue'
+import Pager from '../components/ui/Pager.vue'
 import Tabs from '../components/ui/Tabs.vue'
 import Textarea from '../components/ui/Textarea.vue'
+import { MODELS } from '../models'
 import { toast, toastError } from '../toast'
 
 const id = useRoute().params.id as string
 const load = () => ok(client.api.admin.stories({ id: Number(id) }).get())
+const SIZE = 50
+const loadChapters = () => ok(client.api.admin.stories({ id: Number(id) }).chapters.get({ query: { page: page.value || undefined, size: SIZE } }))
 type Story = Awaited<ReturnType<typeof load>>
-type Chapter = Story['chapters'][number]
+type Chapter = Awaited<ReturnType<typeof loadChapters>>['items'][number]
 const story = ref<Story | null>(null), tab = ref('chapters'), saving = ref(false)
+const chapters = ref<Chapter[]>([]), total = ref(0), page = ref(0) // page 0 = ask for the last page (newest chapters)
 const edit = ref<{ id: number; no: number; title: string; content: string; summary: string } | null>(null), del = ref<Chapter | null>(null)
-const missingSummaries = computed(() => (story.value?.chapters ?? []).filter(c => !c.summary))
+const missingSummaries = computed(() => story.value?.missingSummaryIds ?? [])
 const editOrig = ref('') // JSON of the chapter when the dialog opened, to warn before discarding changes
 const summarizing = ref(false), backfill = ref<{ done: number; total: number } | null>(null)
 
@@ -37,11 +42,70 @@ const warnUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue
 watch(streaming, on => on ? addEventListener('beforeunload', warnUnload) : removeEventListener('beforeunload', warnUnload))
 onBeforeRouteLeave(() => !streaming.value || confirm(LEAVE_MSG))
 
+// bulk publish / hide
+const selected = ref<number[]>([]), bulkBusy = ref(false)
+// the selection survives page changes; the header checkbox acts on the visible page
+const pageIds = computed(() => chapters.value.map(c => c.id))
+const pageSelected = computed(() => pageIds.value.filter(i => selected.value.includes(i)).length)
+const allSelected = computed(() => !!pageIds.value.length && pageSelected.value === pageIds.value.length)
+const toggleAll = () => { selected.value = allSelected.value ? selected.value.filter(i => !pageIds.value.includes(i)) : [...new Set([...selected.value, ...pageIds.value])] }
+async function bulkPublish(published: boolean) {
+  bulkBusy.value = true
+  try {
+    const { updated } = await ok(client.api.admin.stories({ id: Number(id) }).chapters.patch({ ids: selected.value, published }))
+    toast(`${published ? 'เผยแพร่' : 'ซ่อน'} ${updated} ตอนแล้ว`); selected.value = []; await refresh()
+  } catch (e) { toastError(e) } finally { bulkBusy.value = false }
+}
+
+// rewrite the chapter being edited with another model; the preview is applied to the editor, never saved by itself
+const editTab = ref('content')
+const rw = ref({ model: '', note: '', out: '', busy: false })
+let rwCtrl: AbortController | null = null
+watch(() => edit.value?.id, () => { rwCtrl?.abort(); rw.value = { ...rw.value, out: '', busy: false } })
+async function rewrite() {
+  if (!edit.value) return
+  rw.value.busy = true; rw.value.out = ''
+  rwCtrl = new AbortController()
+  try {
+    const r = await fetch(`/api/admin/chapters/${edit.value.id}/rewrite`, {
+      method: 'POST', credentials: 'include', signal: rwCtrl.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: rw.value.model, instruction: rw.value.note }),
+    })
+    if (!r.ok || !r.body) throw new Error((await r.text()) || `HTTP ${r.status}`)
+    const rd = r.body.getReader(), dec = new TextDecoder()
+    for (;;) {
+      const { done, value } = await rd.read()
+      if (done) break
+      rw.value.out += dec.decode(value, { stream: true })
+    }
+  } catch (e) {
+    if ((e as Error).name !== 'AbortError') toastError(e)
+  } finally { rw.value.busy = false; rwCtrl = null }
+}
+function applyRewrite() {
+  // drop the "⚠️ ..." note the server appends when the model looped or the stream broke
+  const text = rw.value.out.split('\n\n⚠️')[0].trim()
+  if (!edit.value || !text) return
+  // same shape as the AI drafts: title on the first line, one blank line between paragraphs
+  edit.value.title = text.split('\n')[0].replace(/^#+\s*/, '').slice(0, 110)
+  edit.value.content = text.replace(/\r\n?/g, '\n').split('\n').map(l => l.trimEnd()).filter(l => l.trim() !== '').join('\n\n')
+  rw.value.out = ''; editTab.value = 'content'
+  toast('ใส่ฉบับใหม่ในตัวแก้ไขแล้ว กดบันทึกเพื่อยืนยัน')
+}
+
 async function refresh() {
-  try { story.value = await load() } catch (e) { toastError(e) }
+  try {
+    const [s, r] = await Promise.all([load(), loadChapters()])
+    story.value = s; chapters.value = r.items; total.value = r.total; page.value = r.page
+  } catch (e) { toastError(e) }
+}
+async function goto(p: number) {
+  page.value = p
+  try { const r = await loadChapters(); chapters.value = r.items; total.value = r.total; page.value = r.page } catch (e) { toastError(e) }
 }
 onMounted(refresh)
-onBeforeUnmount(() => { removeEventListener('beforeunload', warnUnload); ctrl?.abort() })
+onBeforeUnmount(() => { removeEventListener('beforeunload', warnUnload); ctrl?.abort(); rwCtrl?.abort() })
 
 async function saveStory(body: StoryInput) {
   saving.value = true
@@ -53,7 +117,13 @@ async function patchChapter(c: { id: number }, body: { title?: string; content?:
   catch (e) { toastError(e) }
 }
 const uploadImage = async (file: File) => (await ok(client.api.admin.images.post({ file }))).url
-const openEdit = (c: Chapter) => { edit.value = { id: c.id, no: c.no, title: c.title, content: c.content, summary: c.summary }; editOrig.value = JSON.stringify(edit.value) }
+// the list carries no text, so the full chapter is fetched when it is opened
+async function openEdit(c: { id: number }) {
+  try {
+    const r = await ok(client.api.admin.chapters({ id: c.id }).get())
+    edit.value = { id: r.id, no: r.no, title: r.title, content: r.content, summary: r.summary }; editTab.value = 'content'; editOrig.value = JSON.stringify(edit.value)
+  } catch (e) { toastError(e) }
+}
 function closeEdit() {
   if (edit.value && JSON.stringify(edit.value) !== editOrig.value && !confirm('มีการแก้ไขที่ยังไม่ได้บันทึก ปิดแล้วจะหายทั้งหมด ปิดเลยไหม?')) return
   edit.value = null
@@ -65,7 +135,7 @@ async function saveEdit() {
 }
 async function removeChapter() {
   if (!del.value) return
-  try { await ok(client.api.admin.chapters({ id: del.value.id }).delete()); del.value = null; await refresh() }
+  try { await ok(client.api.admin.chapters({ id: del.value.id }).delete()); selected.value = selected.value.filter(i => i !== del.value!.id); del.value = null; await refresh() }
   catch (e) { toastError(e) }
 }
 
@@ -86,7 +156,7 @@ async function summarizeEdit() {
 }
 // one by one, stopping at the first failure so a rate limit or bad key does not burn through every chapter
 async function summarizeMissing() {
-  const todo = (story.value?.chapters ?? []).filter(c => !c.summary)
+  const todo = (story.value?.missingSummaryIds ?? []).map(id => ({ id }))
   backfill.value = { done: 0, total: todo.length }
   try {
     for (const c of todo) { await summarize(c); backfill.value.done++ }
@@ -116,6 +186,7 @@ async function generate() {
   } finally {
     const stopped = ctrl?.signal.aborted
     streaming.value = false; ctrl = null
+    page.value = 0 // jump to the last page, where the new draft is
     await refresh() // server saved the chapter as an unpublished draft
     if (stopped) setTimeout(refresh, 1500) // on stop the server saves just after we disconnect
     else setTimeout(refresh, 30_000) // the server writes the recap in the background after the chapter is saved
@@ -142,7 +213,7 @@ const menu = (c: Chapter) => [
 
     <section v-if="tab === 'chapters'">
       <div class="mb-6 rounded-xl border border-line bg-surface p-4">
-        <div class="mb-2 text-sm font-medium">ให้ AI เขียนตอนที่ {{ (story.chapters[story.chapters.length - 1]?.no ?? 0) + 1 }}</div>
+        <div class="mb-2 text-sm font-medium">ให้ AI เขียนตอนที่ {{ story.nextNo }}</div>
         <Textarea v-model="instruction" :rows="2" compact :disabled="streaming" placeholder="คำสั่ง (เว้นว่าง = เขียนต่อจากตอนก่อนหน้า) เช่น ให้พระเอกพบตัวละครลึกลับ" />
         <div class="mt-3">
           <Button v-if="!streaming" @click="generate"><Sparkles class="size-5" />เขียนตอนใหม่</Button>
@@ -158,13 +229,25 @@ const menu = (c: Chapter) => [
         <Button size="sm" variant="outline" :loading="!!backfill" @click="summarizeMissing">{{ backfill ? `กำลังสรุป ${backfill.done}/${backfill.total}` : 'สร้างสรุปที่ยังไม่มี' }}</Button>
       </div>
 
-      <ul v-if="story.chapters.length" class="divide-y divide-line rounded-xl border border-line bg-surface">
-        <li v-for="c in story.chapters" :key="c.id" class="flex items-center gap-1 pr-2 first:rounded-t-xl last:rounded-b-xl hover:bg-fg/5">
+      <div v-if="total" class="mb-2 flex min-h-10 flex-wrap items-center gap-2 px-1 text-sm">
+        <label class="flex cursor-pointer items-center gap-2">
+          <input type="checkbox" class="size-4 accent-primary" :checked="allSelected" :indeterminate="!!pageSelected && !allSelected" @change="toggleAll" />
+          {{ selected.length ? `เลือกแล้ว ${selected.length} ตอน` : 'เลือกทั้งหน้า' }}
+        </label>
+        <template v-if="selected.length">
+          <Button size="sm" :loading="bulkBusy" @click="bulkPublish(true)"><Eye class="size-4" />เผยแพร่</Button>
+          <Button size="sm" variant="outline" :loading="bulkBusy" @click="bulkPublish(false)"><EyeOff class="size-4" />ซ่อน</Button>
+          <Button size="sm" variant="ghost" @click="selected = []">ล้างที่เลือก</Button>
+        </template>
+      </div>
+      <ul v-if="total" class="divide-y divide-line rounded-xl border border-line bg-surface">
+        <li v-for="c in chapters" :key="c.id" class="flex items-center gap-1 pr-2 first:rounded-t-xl last:rounded-b-xl hover:bg-fg/5">
+          <input v-model="selected" type="checkbox" :value="c.id" :aria-label="`เลือกตอนที่ ${c.no}`" class="ml-3 size-4 shrink-0 accent-primary" />
           <button type="button" class="flex min-w-0 flex-1 items-center gap-3 p-3 text-left" @click="openEdit(c)">
             <span class="w-9 shrink-0 text-center tabular-nums text-fg/60">{{ c.no }}</span>
             <span class="min-w-0">
               <span class="block truncate font-serif">{{ c.title || `ตอนที่ ${c.no}` }}</span>
-              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published" class="mr-1" />{{ c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.summary"> · ยังไม่มีสรุป</span></span>
+              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published" class="mr-1" />{{ c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span></span>
             </span>
           </button>
           <Button v-if="!c.published" size="sm" class="hidden sm:inline-flex" @click="patchChapter(c, { published: true })">เผยแพร่</Button>
@@ -174,6 +257,7 @@ const menu = (c: Chapter) => [
         </li>
       </ul>
       <p v-else class="muted py-8 text-center">ยังไม่มีตอน ให้ AI เขียนตอนแรกจากกล่องด้านบน</p>
+      <Pager :model-value="page" :size="SIZE" :total="total" @update:model-value="goto" />
     </section>
 
     <CharactersPanel v-else-if="tab === 'characters'" :story-id="Number(id)" />
@@ -185,11 +269,30 @@ const menu = (c: Chapter) => [
     <Modal :open="!!edit" :title="`แก้ไขตอนที่ ${edit?.no}`" size="lg" wide @close="closeEdit">
       <template v-if="edit">
         <Input v-model="edit.title" label="ชื่อตอน" />
-        <div class="mb-1.5 text-sm font-medium">เนื้อหา</div>
-        <RichEditor v-model="edit.content" :upload="uploadImage" />
-        <Textarea v-model="edit.summary" label="สรุปตอน (AI ใช้เป็นความจำตอนเขียนตอนถัดไป)" :rows="4" compact />
-        <Button variant="outline" size="sm" class="mb-2 mt-2" :loading="summarizing" @click="summarizeEdit"><Sparkles class="size-4" />สรุปใหม่ด้วย AI</Button>
-        <p class="muted text-xs">ถ้าแก้เนื้อหาตอนแล้ว ควรกดสรุปใหม่ มิฉะนั้น AI จะจำเนื้อหาเดิม</p>
+        <Tabs v-model="editTab" class="mb-4" :items="[{ value: 'content', label: 'เนื้อหา' }, { value: 'summary', label: 'สรุป' }, { value: 'rewrite', label: `เขียนใหม่${rw.busy ? ' …' : rw.out ? ' ●' : ''}` }]" />
+
+        <!-- v-show: switching tabs must not drop the editor's undo history and scroll position -->
+        <div v-show="editTab === 'content'"><RichEditor v-model="edit.content" :upload="uploadImage" /></div>
+
+        <div v-if="editTab === 'summary'">
+          <Textarea v-model="edit.summary" label="สรุปตอน (AI ใช้เป็นความจำตอนเขียนตอนถัดไป)" :rows="8" compact />
+          <Button variant="outline" size="sm" class="mb-2 mt-2" :loading="summarizing" @click="summarizeEdit"><Sparkles class="size-4" />สรุปใหม่ด้วย AI</Button>
+          <p class="muted text-xs">ถ้าแก้เนื้อหาตอนแล้ว ควรกดสรุปใหม่ มิฉะนั้น AI จะจำเนื้อหาเดิม (ระบบจะบันทึกเนื้อหาที่แก้ไว้ก่อนสรุป)</p>
+        </div>
+
+        <div v-if="editTab === 'rewrite'">
+          <Input v-model="rw.model" label="Model" list="rewrite-models" hint="เว้นว่าง = ใช้โมเดลของเรื่อง" />
+          <datalist id="rewrite-models"><option v-for="m in MODELS" :key="m" :value="m" /></datalist>
+          <Textarea v-model="rw.note" label="คำแนะนำเพิ่มเติม (ไม่บังคับ)" :rows="2" compact :disabled="rw.busy" placeholder="เช่น เพิ่มบทสนทนา ให้อารมณ์หนักขึ้น" />
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <Button v-if="!rw.busy" size="sm" variant="outline" @click="rewrite"><Sparkles class="size-4" />เขียนใหม่</Button>
+            <Button v-else size="sm" variant="danger" @click="rwCtrl?.abort()"><Square class="size-4" />หยุด</Button>
+            <Button v-if="rw.out && !rw.busy" size="sm" @click="applyRewrite">ใช้ฉบับนี้แทนเนื้อหา</Button>
+          </div>
+          <p class="muted mt-2 text-xs">ใช้เนื้อหาที่บันทึกไว้ล่าสุดเป็นต้นฉบับ (รูปในตอนจะไม่ถูกนำมา) ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะกด "บันทึก" และควรกดสรุปใหม่หลังใช้</p>
+          <Bar v-if="rw.busy" class="mt-2" />
+          <div v-if="rw.out" class="mt-2 max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-dashed border-line p-3 leading-[1.9]">{{ rw.out }}</div>
+        </div>
       </template>
       <template #footer><Button variant="ghost" @click="closeEdit">ยกเลิก</Button><Button @click="saveEdit">บันทึก</Button></template>
     </Modal>
