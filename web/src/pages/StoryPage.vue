@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowDownUp, BookOpen } from 'lucide-vue-next'
+import { ArrowDownUp, BookOpen, Download } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
@@ -50,6 +50,7 @@ onMounted(async () => {
       <div class="mb-10 flex flex-wrap gap-3">
         <Button v-if="startNo" size="lg" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
         <Button v-if="nos.length > 1" variant="outline" size="lg" :to="`/story/${id}/read/${nos[nos.length - 1]}`">ตอนล่าสุด</Button>
+        <Button v-if="nos.length" variant="ghost" size="lg" :href="`/api/stories/${id}/epub`"><Download class="size-5" />EPUB</Button>
       </div>
 
       <Tabs v-if="story.characters.length" v-model="tab" class="mb-4"

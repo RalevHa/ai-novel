@@ -6,6 +6,7 @@ import { adminOnly, assertConfig, auth, prod, seedAdmin, userOnly } from './auth
 import { addChapter, summarizeChapter } from './chapters'
 import { suggestCharacters } from './characters'
 import { buildContext } from './context'
+import { buildEpub } from './epub'
 import { loopStart } from './guard'
 import { imageNames, stripImages } from './markdown'
 import { pageQuery, paging } from './paging'
@@ -82,6 +83,19 @@ const readerRoutes = new Elysia()
     const cast = await db.select({ id: characters.id, name: characters.name, role: characters.role, profile: characters.profile, image: characters.image })
       .from(characters).where(and(eq(characters.storyId, s.id), eq(characters.visible, true))).orderBy(asc(characters.id))
     return { ...s, chapters: list, characters: cast }
+  }, id)
+  // built per request from published chapters only; cache by (story, newest chapter) if downloads ever get frequent
+  .get('/stories/:id/epub', async ({ params, status, request, server }) => {
+    if (limited(`epub:${server?.requestIP(request)?.address}`, 20, 60 * 60_000)) return status(429, { error: 'ดาวน์โหลดบ่อยเกินไป ลองใหม่ภายหลัง' })
+    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, coverImage: true } })
+    if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
+    const list = await db.select({ no: chapters.no, title: chapters.title, content: chapters.content }).from(chapters)
+      .where(and(eq(chapters.storyId, s.id), eq(chapters.published, true))).orderBy(asc(chapters.no))
+    if (!list.length) return status(404, { error: 'เรื่องนี้ยังไม่มีตอนที่เผยแพร่' })
+    return new Response(await buildEpub(s, list), { headers: {
+      'content-type': 'application/epub+zip',
+      'content-disposition': `attachment; filename="story-${s.id}.epub"; filename*=UTF-8''${encodeURIComponent(s.title)}.epub`,
+    } })
   }, id)
   .get('/stories/:id/chapters/:no', async ({ params, status }) => {
     const [c] = await db.select({ no: chapters.no, title: chapters.title, content: chapters.content }).from(chapters)

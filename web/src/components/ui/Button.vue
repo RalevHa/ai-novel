@@ -5,7 +5,7 @@ import { cn } from './cn'
 
 const props = withDefaults(defineProps<{
   variant?: 'solid' | 'outline' | 'ghost' | 'danger'; size?: 'sm' | 'md' | 'lg' | 'icon'
-  to?: string; type?: 'button' | 'submit'; loading?: boolean; disabled?: boolean
+  to?: string; href?: string; type?: 'button' | 'submit'; loading?: boolean; disabled?: boolean
 }>(), { variant: 'solid', size: 'md', type: 'button' })
 
 const cls = computed(() => cn(
@@ -17,6 +17,7 @@ const cls = computed(() => cn(
 
 <template>
   <router-link v-if="to" :to="to" :class="cls"><slot /></router-link>
+  <a v-else-if="href" :href="href" download :class="cls"><slot /></a> <!-- plain link: a file download, not a route -->
   <button v-else :type="type" :class="cls" :disabled="disabled || loading">
     <Loader2 v-if="loading" class="size-4 animate-spin" aria-hidden="true" /><slot />
   </button>
