@@ -40,7 +40,8 @@ export async function summarizeChapter(id: number, model?: string) {
   // too short to summarise: asking the model gives an apology ("no content provided"), which would pollute the recap
   const text = stripImages(c.content)
   const short = text.length < SHORT_CHAPTER
-  const m = model || (await db.query.stories.findFirst({ where: eq(stories.id, c.storyId) }))?.model || DEFAULT_MODEL
+  // SUMMARY_MODEL (e.g. a free local model) wins: a recap needs accuracy, not prose style
+  const m = process.env.SUMMARY_MODEL || model || (await db.query.stories.findFirst({ where: eq(stories.id, c.storyId) }))?.model || DEFAULT_MODEL
   let spent = undefined as Usage | undefined
   const summary = short ? text.replace(/\s+/g, ' ') : await chat(m, [
     { role: 'system', content: SUMMARY_PROMPT },

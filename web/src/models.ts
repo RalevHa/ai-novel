@@ -1,1 +1,1 @@
-export const MODELS = ['anthropic/claude-sonnet-4.5', 'google/gemini-2.5-pro', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat-v3.1', 'openai/gpt-5']
+export const MODELS = ['anthropic/claude-sonnet-4.5', 'google/gemini-2.5-pro', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat-v3.1', 'openai/gpt-5', 'local:scb10x/typhoon2.1-gemma3-12b', 'local:gemma4:12b']
