@@ -109,7 +109,7 @@ onMounted(async () => {
       <section v-if="tab === 'cast'" aria-label="ตัวละคร">
         <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <li v-for="c in story.characters" :key="c.id">
-            <button type="button" class="block h-full w-full overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25" @click="showCharacter(c)">
+            <button type="button" class="flex h-full w-full flex-col overflow-hidden rounded-xl border border-line bg-surface text-left transition-colors hover:border-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25" @click="showCharacter(c)">
               <img v-if="c.image" :src="imageUrl(c.image)" :alt="`รูป ${c.name}`" class="aspect-[3/4] w-full object-cover" loading="lazy" decoding="async" />
               <div v-else class="grid aspect-[3/4] w-full place-items-center bg-secondary/15 font-serif text-5xl font-bold text-secondary" aria-hidden="true">{{ c.name.slice(0, 1) }}</div>
               <div class="p-3">
