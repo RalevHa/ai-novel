@@ -74,7 +74,9 @@ const id = `f-${Math.random().toString(36).slice(2, 8)}`
             <input type="number" min="0" max="23" inputmode="numeric" aria-label="ชั่วโมง" :value="pad(cur?.h ?? 8)" class="h-9 w-14 rounded-lg border border-line bg-surface px-2 text-center outline-none focus:border-primary" @change="setTime('h', ($event.target as HTMLInputElement).value)" />
             <span>:</span>
             <input type="number" min="0" max="59" inputmode="numeric" aria-label="นาที" :value="pad(cur?.mi ?? 0)" class="h-9 w-14 rounded-lg border border-line bg-surface px-2 text-center outline-none focus:border-primary" @change="setTime('mi', ($event.target as HTMLInputElement).value)" />
-            <div class="flex-1" />
+          </div>
+          <!-- own row: time + both buttons do not fit in the 18 rem panel on one line -->
+          <div class="mt-3 flex items-center justify-between">
             <Button size="sm" variant="ghost" :disabled="!model" @click="model = ''">ล้าง</Button>
             <Button size="sm" @click="close()">ตกลง</Button>
           </div>
