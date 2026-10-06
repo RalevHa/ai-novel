@@ -125,7 +125,7 @@ onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventList
         <Button class="flex-1" :disabled="!next" @click="go(next)">ตอนถัดไป<ChevronRight class="size-5" /></Button>
       </div>
       <div class="flex items-center gap-2">
-        <ChapterSelect :chapters="list" :model-value="no" class="flex-1" @update:model-value="go" />
+        <ChapterSelect :chapters="list" :model-value="no" up class="flex-1" @update:model-value="go" />
         <Button variant="ghost" :to="`/story/${id}`">สารบัญ</Button>
       </div>
     </nav>

@@ -2,6 +2,7 @@
 import { reactive } from 'vue'
 import { MODELS } from '../models'
 import Button from './ui/Button.vue'
+import ComboInput from './ui/ComboInput.vue'
 import Input from './ui/Input.vue'
 import Switch from './ui/Switch.vue'
 import Textarea from './ui/Textarea.vue'
@@ -32,8 +33,7 @@ const models = MODELS
     <Textarea v-model="f.outline" label="แผนเรื่อง (หนึ่งบรรทัดต่อหนึ่งตอน)" :rows="5" placeholder="พระเอกตื่นในต่างโลก&#10;พบเพื่อนร่วมทางคนแรก&#10;ต่อสู้กับมังกร" />
     <p class="muted -mt-2 mb-4 text-xs">เลือก "เขียนตามแผนเรื่อง" ตอนสั่งเขียน ระบบจะใช้บรรทัดแรกที่ยังไม่มี ✓ เป็นคำสั่ง แล้วใส่ ✓ ให้เมื่อเขียนครบตอน</p>
     <Textarea v-model="f.systemPrompt" label="System prompt (เว้นว่าง = ใช้ค่าเริ่มต้นนักเขียนนิยายญี่ปุ่น)" :rows="3" />
-    <Input v-model="f.model" label="Model" list="story-models" hint="slug จาก OpenRouter หรือ local:ชื่อโมเดล เพื่อใช้โมเดลในเครื่อง (Ollama) เว้นว่างเพื่อใช้ค่าเริ่มต้นของ server" />
-    <datalist id="story-models"><option v-for="m in models" :key="m" :value="m" /></datalist>
+    <ComboInput v-model="f.model" label="Model" :options="models" hint="slug จาก OpenRouter หรือ local:ชื่อโมเดล เพื่อใช้โมเดลในเครื่อง (Ollama) เว้นว่างเพื่อใช้ค่าเริ่มต้นของ server" />
     <Switch v-model="f.published" label="เผยแพร่เรื่องนี้" class="mb-5" />
     <Button type="submit" :loading="busy">{{ submitLabel || 'บันทึก' }}</Button>
   </form>

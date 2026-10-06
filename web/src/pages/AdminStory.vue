@@ -7,6 +7,8 @@ import CharactersPanel from '../components/CharactersPanel.vue'
 import CoverUploader from '../components/CoverUploader.vue'
 import StoryForm, { type StoryInput } from '../components/StoryForm.vue'
 import Bar from '../components/ui/Bar.vue'
+import ComboInput from '../components/ui/ComboInput.vue'
+import DateTimeInput from '../components/ui/DateTimeInput.vue'
 import Button from '../components/ui/Button.vue'
 import Dot from '../components/ui/Dot.vue'
 import DropMenu from '../components/ui/DropMenu.vue'
@@ -336,7 +338,7 @@ const menu = (c: Chapter) => [
     <Modal :open="!!edit" :title="`แก้ไขตอนที่ ${edit?.no}`" size="lg" wide @close="closeEdit">
       <template v-if="edit">
         <Input v-model="edit.title" label="ชื่อตอน" />
-        <Input v-model="edit.publishAt" type="datetime-local" label="ตั้งเวลาเผยแพร่ (ไม่บังคับ)" hint="ตั้งเวลาแล้วกดบันทึก ตอนจะขึ้นให้ผู้อ่านเมื่อถึงเวลา ล้างช่องนี้เพื่อยกเลิก (ตอนจะกลับเป็นฉบับร่าง)" />
+        <DateTimeInput v-model="edit.publishAt" label="ตั้งเวลาเผยแพร่ (ไม่บังคับ)" hint="ตั้งเวลาแล้วกดบันทึก ตอนจะขึ้นให้ผู้อ่านเมื่อถึงเวลา ล้างช่องนี้เพื่อยกเลิก (ตอนจะกลับเป็นฉบับร่าง)" />
         <Tabs v-model="editTab" class="mb-4" :items="[{ value: 'content', label: 'เนื้อหา' }, { value: 'summary', label: 'สรุป' }, { value: 'rewrite', label: `เขียนใหม่${rw.busy ? ' …' : rw.out ? ' ●' : ''}` }, { value: 'check', label: 'ตรวจความต่อเนื่อง' }, { value: 'history', label: 'ประวัติ' }]" />
 
         <!-- v-show: switching tabs must not drop the editor's undo history and scroll position -->
@@ -349,8 +351,7 @@ const menu = (c: Chapter) => [
         </div>
 
         <div v-if="editTab === 'rewrite'">
-          <Input v-model="rw.model" label="Model" list="rewrite-models" hint="เว้นว่าง = ใช้โมเดลของเรื่อง" />
-          <datalist id="rewrite-models"><option v-for="m in MODELS" :key="m" :value="m" /></datalist>
+          <ComboInput v-model="rw.model" label="Model" :options="MODELS" hint="เว้นว่าง = ใช้โมเดลของเรื่อง" />
           <Textarea v-model="rw.note" label="คำแนะนำเพิ่มเติม (ไม่บังคับ)" :rows="2" compact :disabled="rw.busy" placeholder="เช่น เพิ่มบทสนทนา ให้อารมณ์หนักขึ้น" />
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <Button v-if="!rw.busy" size="sm" variant="outline" @click="rewrite"><Sparkles class="size-4" />เขียนใหม่</Button>
