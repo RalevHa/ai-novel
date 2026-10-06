@@ -4,12 +4,13 @@ import { sql } from 'drizzle-orm'
 import { db } from './db'
 import { NAME_RE, removeUpload, UPLOAD_DIR } from './uploads'
 
-/** Delete uploaded files that no cover, portrait or chapter refers to any more (call after the referencing row changed). */
+/** Delete uploaded files that no cover, portrait, chapter or saved chapter version refers to any more (call after the referencing row changed). */
 export async function pruneUnused(names: string[]) {
   for (const name of names) {
     const used = await db.execute(sql`select 1 where exists (select 1 from stories where cover_image = ${name})
       or exists (select 1 from characters where image = ${name})
-      or exists (select 1 from chapters where position(${name} in content) > 0)`)
+      or exists (select 1 from chapters where position(${name} in content) > 0)
+      or exists (select 1 from chapter_versions where position(${name} in content) > 0)`)
     if (!used.length) await removeUpload(name)
   }
 }

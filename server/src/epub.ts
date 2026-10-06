@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
 import MarkdownIt from 'markdown-it'
 import { UPLOAD_DIR } from './uploads'
+import { esc } from './xml'
 
 type Entry = { name: string; data: string | Uint8Array; store?: boolean }
 type Field = [value: number, bytes: 2 | 4]
@@ -52,7 +53,6 @@ md.renderer.rules.image = (tokens, i, opts, env, self) => {
 // links go nowhere offline: keep the text, drop the href
 md.renderer.rules.link_open = (tokens, i, opts, _env, self) => { tokens[i].attrs = []; return self.renderToken(tokens, i, opts) }
 
-const esc = md.utils.escapeHtml
 const page = (title: string, body: string) => `<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="th" xml:lang="th">
 <head><meta charset="utf-8"/><title>${esc(title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>

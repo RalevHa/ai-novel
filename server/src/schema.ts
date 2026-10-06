@@ -18,6 +18,7 @@ export const stories = pgTable('stories', {
   mood: text('mood').notNull().default(''),
   premise: text('premise').notNull().default(''), // plot/characters fed to the AI
   systemPrompt: text('system_prompt').notNull().default(''),
+  outline: text('outline').notNull().default(''), // one planned chapter per line; "✓ " marks the ones already written
   model: text('model').notNull().default(''),
   coverImage: text('cover_image').notNull().default(''), // file name in the uploads dir; empty = generated cover
   published: boolean('published').notNull().default(false),
@@ -34,6 +35,7 @@ export const chapters = pgTable('chapters', {
   instruction: text('instruction').notNull().default(''),
   model: text('model').notNull().default(''),
   published: boolean('published').notNull().default(false), // AI writes a draft, admin publishes
+  publishAt: timestamp('publish_at'), // set + published = goes live at this time (UTC); null = live as soon as published
   tokens: integer('tokens'), // total tokens spent writing + summarising; null = unknown (older chapters, or the stream stopped before OpenRouter reported usage)
   cost: doublePrecision('cost'), // USD (OpenRouter credits), same caveat as tokens
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -57,3 +59,12 @@ export const readingProgress = pgTable('reading_progress', {
   no: integer('no').notNull(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.userId, t.storyId] })])
+
+// the text a chapter had before each overwrite, so a bad edit or rewrite can be undone
+export const chapterVersions = pgTable('chapter_versions', {
+  id: serial('id').primaryKey(),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [index('chapter_versions_chapter_id_idx').on(t.chapterId, t.id)])
