@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/vue'
-import { ChevronLeft, ChevronRight, List, Type } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, List, Pause, Play, Square, Type, Volume2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import ChapterSelect from '../components/ChapterSelect.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
+import { RATES, useSpeech } from '../tts'
+import { toast } from '../toast'
 import { renderChapter } from '../markdown'
 import { lsGet, lsSet } from '../ls'
 import { useAuth } from '../stores/auth'
@@ -34,10 +36,19 @@ const idx = computed(() => nos.value.indexOf(no.value))
 const prev = computed(() => idx.value > 0 ? nos.value[idx.value - 1] : null)
 const next = computed(() => idx.value >= 0 && idx.value < nos.value.length - 1 ? nos.value[idx.value + 1] : null)
 
+// read aloud: when a chapter ends, carry on with the next one (the listener started it, so the browser allows it)
+const article = ref<HTMLElement | null>(null)
+const speech = useSpeech()
+let resume = false
+function listen() {
+  if (!speech.play(article.value?.innerText ?? '', () => { if (next.value) { resume = true; go(next.value) } })) toast('อุปกรณ์นี้ไม่มีเสียงอ่านภาษาไทย', 'error')
+}
+
 const html = computed(() => renderChapter(chapter.value?.content ?? '', chapter.value?.title ?? ''))
 const label = computed(() => stripChapterPrefix(chapter.value?.title ?? ''))
 
 watch(() => [id.value, no.value], async () => {
+  speech.stop()
   loading.value = true; error.value = ''
   try {
     const [c, s] = await Promise.all([
@@ -54,6 +65,7 @@ watch(() => [id.value, no.value], async () => {
     scrollTo(0, 0)
   } catch (e) { error.value = (e as Error).message }
   loading.value = false
+  if (resume) { resume = false; await nextTick(); listen() }
 }, { immediate: true })
 
 const go = (n: number | null | undefined) => n && router.push(`/story/${id.value}/read/${n}`)
@@ -76,6 +88,13 @@ onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventList
     <div class="mb-8 flex items-center">
       <Button variant="ghost" :to="`/story/${id}`" class="-ml-3 px-3" aria-label="สารบัญ"><List class="size-5" /><span class="hidden sm:inline">สารบัญ</span></Button>
       <ChapterSelect :chapters="list" :model-value="no" class="mx-2 max-w-[300px] flex-1" @update:model-value="go" />
+      <template v-if="speech.supported">
+        <Button v-if="!speech.speaking.value" variant="ghost" class="px-3" aria-label="ฟังเสียงอ่าน" @click="listen"><Volume2 class="size-5" /><span class="hidden sm:inline">ฟัง</span></Button>
+        <template v-else>
+          <Button variant="ghost" size="icon" :aria-label="speech.paused.value ? 'อ่านต่อ' : 'พัก'" @click="speech.toggle"><Play v-if="speech.paused.value" class="size-5" /><Pause v-else class="size-5" /></Button>
+          <Button variant="ghost" size="icon" aria-label="หยุดอ่าน" @click="speech.stop"><Square class="size-4" /></Button>
+        </template>
+      </template>
       <Popover class="relative">
         <PopoverButton as="template"><Button variant="ghost" class="px-3" aria-label="ตัวอักษร"><Type class="size-5" /><span class="hidden sm:inline">ตัวอักษร</span></Button></PopoverButton>
         <PopoverPanel class="absolute right-0 z-40 mt-1 w-72 rounded-xl border border-line bg-surface p-4 shadow-lg">
@@ -84,7 +103,11 @@ onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventList
           <div class="eyebrow mb-2">แบบอักษร</div>
           <Segmented v-model="face" :options="faces" label="แบบอักษร" class="mb-4" />
           <label class="eyebrow mb-1 block" for="size">ขนาด {{ size }}</label>
-          <input id="size" v-model.number="size" type="range" min="15" max="30" step="1" class="w-full accent-primary" />
+          <input id="size" v-model.number="size" type="range" min="15" max="30" step="1" class="mb-4 w-full accent-primary" />
+          <template v-if="speech.supported">
+            <div class="eyebrow mb-2">ความเร็วเสียงอ่าน</div>
+            <Segmented :model-value="speech.rate.value" :options="RATES" label="ความเร็วเสียงอ่าน" @update:model-value="speech.setRate($event as string)" />
+          </template>
         </PopoverPanel>
       </Popover>
     </div>
@@ -94,7 +117,7 @@ onBeforeUnmount(() => { removeEventListener('scroll', onScroll); removeEventList
       <h1 class="mt-2 font-serif text-[clamp(26px,4vw,34px)] font-bold leading-snug">{{ label || `ตอนที่ ${chapter.no}` }}</h1>
     </header>
 
-    <article class="reader-body" :class="face" v-html="html" />
+    <article ref="article" class="reader-body" :class="face" v-html="html" />
 
     <nav class="mt-14 space-y-3 border-t border-line pt-6" aria-label="เปลี่ยนตอน">
       <div class="flex gap-2">

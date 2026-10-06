@@ -8,13 +8,13 @@ import Textarea from './ui/Textarea.vue'
 
 export type StoryInput = {
   title: string; synopsis: string; genre: string; mood: string
-  premise: string; systemPrompt: string; model: string; published: boolean
+  premise: string; outline: string; systemPrompt: string; model: string; published: boolean
 }
 const props = defineProps<{ initial?: Partial<StoryInput>; busy?: boolean; submitLabel?: string }>()
 const emit = defineEmits<{ save: [StoryInput] }>()
 
 const f = reactive<StoryInput>({
-  title: '', synopsis: '', genre: '', mood: '', premise: '', systemPrompt: '', model: '', published: false,
+  title: '', synopsis: '', genre: '', mood: '', premise: '', outline: '', systemPrompt: '', model: '', published: false,
   ...props.initial,
 })
 const models = MODELS
@@ -29,6 +29,8 @@ const models = MODELS
       <Input v-model="f.mood" label="ความรู้สึกที่ต้องการ" placeholder="เช่น อบอุ่นหัวใจ" />
     </div>
     <Textarea v-model="f.premise" label="พล็อต / ตัวละครตั้งต้น (ส่งให้ AI เท่านั้น)" :rows="4" />
+    <Textarea v-model="f.outline" label="แผนเรื่อง (หนึ่งบรรทัดต่อหนึ่งตอน)" :rows="5" placeholder="พระเอกตื่นในต่างโลก&#10;พบเพื่อนร่วมทางคนแรก&#10;ต่อสู้กับมังกร" />
+    <p class="muted -mt-2 mb-4 text-xs">เลือก "เขียนตามแผนเรื่อง" ตอนสั่งเขียน ระบบจะใช้บรรทัดแรกที่ยังไม่มี ✓ เป็นคำสั่ง แล้วใส่ ✓ ให้เมื่อเขียนครบตอน</p>
     <Textarea v-model="f.systemPrompt" label="System prompt (เว้นว่าง = ใช้ค่าเริ่มต้นนักเขียนนิยายญี่ปุ่น)" :rows="3" />
     <Input v-model="f.model" label="Model" list="story-models" hint="slug จาก OpenRouter เว้นว่างเพื่อใช้ค่าเริ่มต้นของ server" />
     <datalist id="story-models"><option v-for="m in models" :key="m" :value="m" /></datalist>

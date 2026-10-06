@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowDownUp, BookOpen, Download } from 'lucide-vue-next'
+import { ArrowDownUp, BookOpen, Download, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
@@ -11,6 +11,7 @@ import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
 import { fmtDate } from '../genre'
 import { lsGet } from '../ls'
+import { toast } from '../toast'
 import { useAuth } from '../stores/auth'
 
 const id = useRoute().params.id as string
@@ -26,6 +27,7 @@ const startNo = computed(() => (nos.value.includes(last.value) ? last.value : no
 const SIZE = 50, tocPage = ref(1)
 const all = computed(() => newestFirst.value ? [...(story.value?.chapters ?? [])].reverse() : story.value?.chapters ?? [])
 const list = computed(() => all.value.slice((tocPage.value - 1) * SIZE, tocPage.value * SIZE))
+const copyFeed = () => navigator.clipboard.writeText(`${location.origin}/api/stories/${id}/feed.xml`).then(() => toast('คัดลอกลิงก์ RSS แล้ว วางในแอปอ่าน feed ได้เลย'), () => toast('คัดลอกไม่สำเร็จ', 'error'))
 const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 
 onMounted(async () => {
@@ -51,6 +53,7 @@ onMounted(async () => {
         <Button v-if="startNo" size="lg" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
         <Button v-if="nos.length > 1" variant="outline" size="lg" :to="`/story/${id}/read/${nos[nos.length - 1]}`">ตอนล่าสุด</Button>
         <Button v-if="nos.length" variant="ghost" size="lg" :href="`/api/stories/${id}/epub`"><Download class="size-5" />EPUB</Button>
+        <Button v-if="nos.length" variant="ghost" size="lg" aria-label="คัดลอกลิงก์ RSS เพื่อติดตามตอนใหม่" @click="copyFeed"><Rss class="size-5" />RSS</Button>
       </div>
 
       <Tabs v-if="story.characters.length" v-model="tab" class="mb-4"

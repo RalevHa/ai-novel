@@ -14,9 +14,11 @@ import Input from '../components/ui/Input.vue'
 import RichEditor from '../components/RichEditor.vue'
 import Modal from '../components/ui/Modal.vue'
 import Pager from '../components/ui/Pager.vue'
+import Segmented from '../components/ui/Segmented.vue'
+import Switch from '../components/ui/Switch.vue'
 import Tabs from '../components/ui/Tabs.vue'
 import Textarea from '../components/ui/Textarea.vue'
-import { fmtCost } from '../genre'
+import { fmtCost, fmtDateTime, fromLocalInput, parseDb, toLocalInput } from '../genre'
 import { MODELS } from '../models'
 import { toast, toastError } from '../toast'
 
@@ -28,13 +30,19 @@ type Story = Awaited<ReturnType<typeof load>>
 type Chapter = Awaited<ReturnType<typeof loadChapters>>['items'][number]
 const story = ref<Story | null>(null), tab = ref('chapters'), saving = ref(false)
 const chapters = ref<Chapter[]>([]), total = ref(0), page = ref(0) // page 0 = ask for the last page (newest chapters)
-const edit = ref<{ id: number; no: number; title: string; content: string; summary: string } | null>(null), del = ref<Chapter | null>(null)
+const edit = ref<{ id: number; no: number; title: string; content: string; summary: string; publishAt: string } | null>(null), del = ref<Chapter | null>(null)
 const missingSummaries = computed(() => story.value?.missingSummaryIds ?? [])
 const editOrig = ref('') // JSON of the chapter when the dialog opened, to warn before discarding changes
 const summarizing = ref(false), backfill = ref<{ done: number; total: number } | null>(null)
 
-// generate
+// this month's AI spending against MONTHLY_BUDGET_USD (budget 0 = no cap)
+const usage = ref<{ spent: number; budget: number } | null>(null)
+const loadUsage = () => ok(client.api.admin.usage.get()).then(u => { usage.value = u }).catch(() => {})
+
+// generate: `fromOutline` takes the story's next planned chapter; `count` writes that many in a row
 const instruction = ref(''), out = ref(''), streaming = ref(false)
+const fromOutline = ref(false), count = ref('1'), batchNo = ref(0)
+const COUNTS = [{ k: '1', n: '1' }, { k: '2', n: '2' }, { k: '3', n: '3' }, { k: '5', n: '5' }]
 let ctrl: AbortController | null = null
 
 // Leaving mid-generation is allowed (the server keeps what was written as a draft) but never silent.
@@ -58,11 +66,38 @@ async function bulkPublish(published: boolean) {
   } catch (e) { toastError(e) } finally { bulkBusy.value = false }
 }
 
+// saved versions of the chapter being edited (the server keeps the text before every overwrite)
+type Version = Awaited<ReturnType<typeof loadVersions>>[number]
+const loadVersions = () => ok(client.api.admin.chapters({ id: edit.value!.id }).versions.get())
+const versions = ref<Version[]>([]), restoring = ref(0)
+async function showHistory() {
+  try { versions.value = await loadVersions() } catch (e) { toastError(e) }
+}
+async function restoreVersion(v: Version) {
+  if (!edit.value) return
+  if (JSON.stringify(edit.value) !== editOrig.value && !confirm('มีการแก้ไขที่ยังไม่ได้บันทึก กู้คืนแล้วจะหายทั้งหมด กู้คืนเลยไหม?')) return
+  restoring.value = v.id
+  try {
+    await ok(client.api.admin.chapters({ id: edit.value.id }).restore({ version: v.id }).post())
+    toast('กู้คืนแล้ว (ฉบับที่ถูกแทนที่ยังอยู่ในประวัติ) ควรกดสรุปใหม่'); await openEdit(edit.value); await refresh()
+  } catch (e) { toastError(e) } finally { restoring.value = 0 }
+}
+
+// continuity report for the saved text: contradictions with the cast and earlier recaps
+const check = ref({ report: '', busy: false })
+async function runCheck() {
+  if (!edit.value) return
+  check.value = { report: '', busy: true }
+  try { check.value.report = (await ok(client.api.admin.chapters({ id: edit.value.id }).check.post())).report; loadUsage() }
+  catch (e) { toastError(e) } finally { check.value.busy = false }
+}
+
 // rewrite the chapter being edited with another model; the preview is applied to the editor, never saved by itself
 const editTab = ref('content')
 const rw = ref({ model: '', note: '', out: '', busy: false })
 let rwCtrl: AbortController | null = null
-watch(() => edit.value?.id, () => { rwCtrl?.abort(); rw.value = { ...rw.value, out: '', busy: false } })
+watch(() => edit.value?.id, () => { rwCtrl?.abort(); rw.value = { ...rw.value, out: '', busy: false }; check.value = { report: '', busy: false } })
+watch(editTab, t => { if (t === 'history') showHistory() })
 async function rewrite() {
   if (!edit.value) return
   rw.value.busy = true; rw.value.out = ''
@@ -99,7 +134,9 @@ async function refresh() {
   try {
     const [s, r] = await Promise.all([load(), loadChapters()])
     story.value = s; chapters.value = r.items; total.value = r.total; page.value = r.page
+    if (!s.nextBeat) fromOutline.value = false
   } catch (e) { toastError(e) }
+  loadUsage()
 }
 async function goto(p: number) {
   page.value = p
@@ -113,7 +150,7 @@ async function saveStory(body: StoryInput) {
   try { await ok(client.api.admin.stories({ id: Number(id) }).patch(body)); toast('บันทึกแล้ว'); await refresh() }
   catch (e) { toastError(e) } finally { saving.value = false }
 }
-async function patchChapter(c: { id: number }, body: { title?: string; content?: string; summary?: string; published?: boolean }) {
+async function patchChapter(c: { id: number }, body: { title?: string; content?: string; summary?: string; published?: boolean; publishAt?: string | null }) {
   try { await ok(client.api.admin.chapters({ id: c.id }).patch(body)); await refresh() }
   catch (e) { toastError(e) }
 }
@@ -122,18 +159,23 @@ const uploadImage = async (file: File) => (await ok(client.api.admin.images.post
 async function openEdit(c: { id: number }) {
   try {
     const r = await ok(client.api.admin.chapters({ id: c.id }).get())
-    edit.value = { id: r.id, no: r.no, title: r.title, content: r.content, summary: r.summary }; editTab.value = 'content'; editOrig.value = JSON.stringify(edit.value)
+    edit.value = { id: r.id, no: r.no, title: r.title, content: r.content, summary: r.summary, publishAt: toLocalInput(r.publishAt) }; editTab.value = 'content'; editOrig.value = JSON.stringify(edit.value); schedOrig = edit.value.publishAt
   } catch (e) { toastError(e) }
 }
 function closeEdit() {
   if (edit.value && JSON.stringify(edit.value) !== editOrig.value && !confirm('มีการแก้ไขที่ยังไม่ได้บันทึก ปิดแล้วจะหายทั้งหมด ปิดเลยไหม?')) return
   edit.value = null
 }
+let schedOrig = '' // the schedule when the dialog opened; only a changed one is sent
 async function saveEdit() {
   if (!edit.value) return
-  await patchChapter(edit.value, { title: edit.value.title, content: edit.value.content, summary: edit.value.summary })
+  const at = fromLocalInput(edit.value.publishAt)
+  // a time = goes live then; clearing a schedule puts the chapter back to draft rather than publishing it right away
+  const schedule = edit.value.publishAt === schedOrig ? {} : at ? { publishAt: at, published: true } : { publishAt: null, published: false }
+  await patchChapter(edit.value, { title: edit.value.title, content: edit.value.content, summary: edit.value.summary, ...schedule })
   edit.value = null
 }
+const scheduled = (c: { published: boolean; publishAt: string | Date | null }) => c.published && !!c.publishAt && parseDb(c.publishAt)!.getTime() > Date.now()
 async function removeChapter() {
   if (!del.value) return
   try { await ok(client.api.admin.chapters({ id: del.value.id }).delete()); selected.value = selected.value.filter(i => i !== del.value!.id); del.value = null; await refresh() }
@@ -165,28 +207,39 @@ async function summarizeMissing() {
   } catch (e) { toastError(e) } finally { backfill.value = null; await refresh() }
 }
 
+// streams one chapter into `out`; resolves with its text (the server appends a "⚠️ ..." note when the model looped or failed)
+async function generateOne() {
+  out.value = ''
+  const r = await fetch(`/api/admin/stories/${id}/generate`, {
+    method: 'POST', credentials: 'include', signal: ctrl!.signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction: instruction.value, fromOutline: fromOutline.value }),
+  })
+  if (!r.ok || !r.body) throw new Error((await r.text()) || `HTTP ${r.status}`)
+  const rd = r.body.getReader(), dec = new TextDecoder()
+  for (;;) {
+    const { done, value } = await rd.read()
+    if (done) break
+    out.value += dec.decode(value, { stream: true })
+  }
+  return out.value
+}
+
 async function generate() {
-  streaming.value = true; out.value = ''
+  streaming.value = true
   ctrl = new AbortController()
+  const n = fromOutline.value ? Number(count.value) : 1
   try {
-    const r = await fetch(`/api/admin/stories/${id}/generate`, {
-      method: 'POST', credentials: 'include', signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instruction: instruction.value }),
-    })
-    if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`)
-    const rd = r.body.getReader(), dec = new TextDecoder()
-    for (;;) {
-      const { done, value } = await rd.read()
-      if (done) break
-      out.value += dec.decode(value, { stream: true })
+    for (batchNo.value = 1; batchNo.value <= n; batchNo.value++) {
+      // a marker in the text means it looped or broke: stop instead of paying for more of the same
+      if ((await generateOne()).includes('⚠️')) break
     }
     instruction.value = ''
   } catch (e) {
     if ((e as Error).name !== 'AbortError') toastError(e)
   } finally {
     const stopped = ctrl?.signal.aborted
-    streaming.value = false; ctrl = null
+    streaming.value = false; ctrl = null; batchNo.value = 0
     page.value = 0 // jump to the last page, where the new draft is
     await refresh() // server saved the chapter as an unpublished draft
     if (stopped) setTimeout(refresh, 1500) // on stop the server saves just after we disconnect
@@ -208,7 +261,10 @@ const menu = (c: Chapter) => [
       <Button variant="ghost" size="icon" to="/admin/stories" aria-label="กลับ" class="-ml-2"><ArrowLeft class="size-5" /></Button>
       <h1 class="font-serif text-[26px] font-bold">{{ story.title }}</h1>
       <span :class="['rounded-full px-2.5 py-0.5 text-xs', story.published ? 'bg-success/15 text-success' : 'bg-fg/10']">{{ story.published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
-      <span v-if="story.spent" class="muted ml-auto text-sm" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">ใช้ไปแล้ว {{ fmtCost(story.spent) }}</span>
+      <span v-if="story.spent || usage?.budget" class="muted ml-auto text-sm">
+        <span v-if="story.spent" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">เรื่องนี้ใช้ไป {{ fmtCost(story.spent) }}</span>
+        <span v-if="usage?.budget" :class="['ml-3', usage.spent >= usage.budget * 0.8 && 'font-medium text-danger']" title="ค่า AI ของตอนที่เขียนเดือนนี้ เทียบกับ MONTHLY_BUDGET_USD">เดือนนี้ {{ fmtCost(usage.spent) }} / {{ fmtCost(usage.budget) }}</span>
+      </span>
     </div>
 
     <Tabs v-model="tab" :items="[{ value: 'chapters', label: 'ตอน' }, { value: 'characters', label: 'ตัวละคร' }, { value: 'settings', label: 'ตั้งค่าเรื่อง' }]" class="mb-5" />
@@ -217,9 +273,18 @@ const menu = (c: Chapter) => [
       <div class="mb-6 rounded-xl border border-line bg-surface p-4">
         <div class="mb-2 text-sm font-medium">ให้ AI เขียนตอนที่ {{ story.nextNo }}</div>
         <Textarea v-model="instruction" :rows="2" compact :disabled="streaming" placeholder="คำสั่ง (เว้นว่าง = เขียนต่อจากตอนก่อนหน้า) เช่น ให้พระเอกพบตัวละครลึกลับ" />
+        <div v-if="story.nextBeat" class="mt-3 rounded-lg border border-dashed border-line p-3 text-sm">
+          <Switch v-model="fromOutline" :disabled="streaming" label="เขียนตามแผนเรื่อง" />
+          <p class="muted mt-2">ตอนถัดไปตามแผน: <span class="text-fg">{{ story.nextBeat }}</span></p>
+          <div v-if="fromOutline" class="mt-2 flex items-center gap-3">
+            <span class="muted">เขียนติดกัน</span>
+            <Segmented v-model="count" :options="COUNTS" label="จำนวนตอนที่เขียนติดกัน" class="w-40" />
+            <span class="muted">ตอน (หยุดเองถ้าโมเดลวนซ้ำ ผิดพลาด หรือแผนหมด)</span>
+          </div>
+        </div>
         <div class="mt-3">
-          <Button v-if="!streaming" @click="generate"><Sparkles class="size-5" />เขียนตอนใหม่</Button>
-          <Button v-else variant="danger" @click="ctrl?.abort()"><Square class="size-4" />หยุดและเก็บที่เขียนไว้</Button>
+          <Button v-if="!streaming" @click="generate"><Sparkles class="size-5" />{{ fromOutline && Number(count) > 1 ? `เขียน ${count} ตอนตามแผน` : 'เขียนตอนใหม่' }}</Button>
+          <Button v-else variant="danger" @click="ctrl?.abort()"><Square class="size-4" />หยุดและเก็บที่เขียนไว้<template v-if="Number(count) > 1 && fromOutline"> (ตอน {{ batchNo }}/{{ count }})</template></Button>
         </div>
         <p class="muted mt-3 text-xs">AI จะเห็นรายชื่อตัวละคร สรุปของทุกตอนก่อนหน้า และอ่านสองตอนล่าสุดแบบเต็ม</p>
         <Bar v-if="streaming" class="mt-3" />
@@ -249,10 +314,10 @@ const menu = (c: Chapter) => [
             <span class="w-9 shrink-0 text-center tabular-nums text-fg/60">{{ c.no }}</span>
             <span class="min-w-0">
               <span class="block truncate font-serif">{{ c.title || `ตอนที่ ${c.no}` }}</span>
-              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published" class="mr-1" />{{ c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span><span v-if="c.cost != null" :title="`${c.tokens?.toLocaleString()} tokens`"> · {{ fmtCost(c.cost) }}</span></span>
+              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published && !scheduled(c)" class="mr-1" />{{ scheduled(c) ? `ตั้งเวลา ${fmtDateTime(c.publishAt)}` : c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span><span v-if="c.cost != null" :title="`${c.tokens?.toLocaleString()} tokens`"> · {{ fmtCost(c.cost) }}</span></span>
             </span>
           </button>
-          <Button v-if="!c.published" size="sm" class="hidden sm:inline-flex" @click="patchChapter(c, { published: true })">เผยแพร่</Button>
+          <Button v-if="!c.published || scheduled(c)" size="sm" class="hidden sm:inline-flex" @click="patchChapter(c, { published: true })">เผยแพร่ตอนนี้</Button>
           <DropMenu :items="menu(c)" label="เมนูของตอน">
             <template #button="{ label }"><Button variant="ghost" size="icon" :aria-label="label"><EllipsisVertical class="size-5" /></Button></template>
           </DropMenu>
@@ -271,7 +336,8 @@ const menu = (c: Chapter) => [
     <Modal :open="!!edit" :title="`แก้ไขตอนที่ ${edit?.no}`" size="lg" wide @close="closeEdit">
       <template v-if="edit">
         <Input v-model="edit.title" label="ชื่อตอน" />
-        <Tabs v-model="editTab" class="mb-4" :items="[{ value: 'content', label: 'เนื้อหา' }, { value: 'summary', label: 'สรุป' }, { value: 'rewrite', label: `เขียนใหม่${rw.busy ? ' …' : rw.out ? ' ●' : ''}` }]" />
+        <Input v-model="edit.publishAt" type="datetime-local" label="ตั้งเวลาเผยแพร่ (ไม่บังคับ)" hint="ตั้งเวลาแล้วกดบันทึก ตอนจะขึ้นให้ผู้อ่านเมื่อถึงเวลา ล้างช่องนี้เพื่อยกเลิก (ตอนจะกลับเป็นฉบับร่าง)" />
+        <Tabs v-model="editTab" class="mb-4" :items="[{ value: 'content', label: 'เนื้อหา' }, { value: 'summary', label: 'สรุป' }, { value: 'rewrite', label: `เขียนใหม่${rw.busy ? ' …' : rw.out ? ' ●' : ''}` }, { value: 'check', label: 'ตรวจความต่อเนื่อง' }, { value: 'history', label: 'ประวัติ' }]" />
 
         <!-- v-show: switching tabs must not drop the editor's undo history and scroll position -->
         <div v-show="editTab === 'content'"><RichEditor v-model="edit.content" :upload="uploadImage" /></div>
@@ -294,6 +360,28 @@ const menu = (c: Chapter) => [
           <p class="muted mt-2 text-xs">ใช้เนื้อหาที่บันทึกไว้ล่าสุดเป็นต้นฉบับ (รูปในตอนจะไม่ถูกนำมา) ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะกด "บันทึก" และควรกดสรุปใหม่หลังใช้</p>
           <Bar v-if="rw.busy" class="mt-2" />
           <div v-if="rw.out" class="mt-2 max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-dashed border-line p-3 leading-[1.9]">{{ rw.out }}</div>
+        </div>
+
+        <div v-if="editTab === 'check'">
+          <Button size="sm" variant="outline" :loading="check.busy" @click="runCheck"><Sparkles class="size-4" />ตรวจความต่อเนื่อง</Button>
+          <p class="muted mt-2 text-xs">ให้ AI เทียบเนื้อหาที่บันทึกไว้ล่าสุดกับรายชื่อตัวละครและสรุปตอนก่อนหน้า แล้วชี้จุดที่ขัดกัน (เสียค่า AI ต่อครั้ง ใช้โมเดลจาก CHECK_MODEL ถ้าตั้งไว้) ผลเป็นแค่คำแนะนำ ไม่ได้แก้อะไรให้</p>
+          <Bar v-if="check.busy" class="mt-2" />
+          <div v-if="check.report" class="mt-3 whitespace-pre-wrap rounded-lg border border-line bg-surface p-3 leading-[1.8]">{{ check.report }}</div>
+        </div>
+
+        <div v-if="editTab === 'history'">
+          <p v-if="!versions.length" class="muted py-4 text-center text-sm">ยังไม่มีประวัติ ระบบจะเก็บฉบับเดิมไว้ทุกครั้งที่บันทึกการแก้เนื้อหาหรือชื่อตอน (เก็บ 10 ฉบับล่าสุด)</p>
+          <ul v-else class="divide-y divide-line rounded-xl border border-line">
+            <li v-for="v in versions" :key="v.id" class="flex items-start gap-3 p-3">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium">{{ fmtDateTime(v.createdAt) }} <span class="muted font-normal">· {{ v.length.toLocaleString() }} ตัวอักษร</span></div>
+                <div class="truncate font-serif">{{ v.title || '(ไม่มีชื่อ)' }}</div>
+                <p class="muted mt-1 line-clamp-2 text-sm">{{ v.excerpt }}</p>
+              </div>
+              <Button size="sm" variant="outline" :loading="restoring === v.id" @click="restoreVersion(v)">กู้คืน</Button>
+            </li>
+          </ul>
+          <p class="muted mt-2 text-xs">กู้คืนแล้วฉบับที่ถูกแทนที่จะถูกเก็บในประวัติด้วย จึงย้อนกลับได้อีกครั้ง</p>
         </div>
       </template>
       <template #footer><Button variant="ghost" @click="closeEdit">ยกเลิก</Button><Button @click="saveEdit">บันทึก</Button></template>
