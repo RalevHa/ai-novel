@@ -37,6 +37,8 @@ export const chapters = pgTable('chapters', {
   model: text('model').notNull().default(''),
   published: boolean('published').notNull().default(false), // AI writes a draft, admin publishes
   publishAt: timestamp('publish_at'), // set + published = goes live at this time (UTC); null = live as soon as published
+  views: integer('views').notNull().default(0), // anonymous count of times readers opened the chapter (no user, no IP stored)
+  finishes: integer('finishes').notNull().default(0), // ...and of times they scrolled to the end
   tokens: integer('tokens'), // total tokens spent writing + summarising; null = unknown (older chapters, or the stream stopped before OpenRouter reported usage)
   cost: doublePrecision('cost'), // USD (OpenRouter credits), same caveat as tokens
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -78,3 +80,10 @@ export const chapterVersions = pgTable('chapter_versions', {
   content: text('content').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [index('chapter_versions_chapter_id_idx').on(t.chapterId, t.id)])
+
+// stories a signed-in reader follows ("my shelf")
+export const bookmarks = pgTable('bookmarks', {
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.userId, t.storyId] })])

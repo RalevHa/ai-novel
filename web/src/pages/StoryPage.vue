@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDownUp, BookOpen, Check, Download, Rss } from 'lucide-vue-next'
+import { ArrowDownUp, BookOpen, BookmarkCheck, BookmarkPlus, Check, Download, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
@@ -16,9 +16,11 @@ import { reads as loadReads } from '../readState'
 import { setTitle } from '../title'
 import { toast } from '../toast'
 import { useAuth } from '../stores/auth'
+import { useBookmarks } from '../stores/bookmarks'
 
 const id = useRoute().params.id as string
 const router = useRouter()
+const marks = useBookmarks()
 const auth = useAuth()
 const load = () => ok(client.api.stories({ id: Number(id) }).get())
 const story = ref<Awaited<ReturnType<typeof load>> | null>(null), loading = ref(true), error = ref(''), newestFirst = ref(false)
@@ -57,6 +59,11 @@ watch(cta, el => {
 })
 onBeforeUnmount(() => io?.disconnect())
 
+async function follow() {
+  if (!auth.user) { toast('เข้าสู่ระบบก่อนจึงจะติดตามเรื่องได้'); router.push({ path: '/login', query: { next: `/story/${id}` } }); return }
+  try { await marks.toggle(Number(id)); toast(marks.has(Number(id)) ? 'เพิ่มในชั้นหนังสือของฉันแล้ว' : 'เลิกติดตามแล้ว') } catch (e) { toast((e as Error).message, 'error') }
+}
+
 const copyFeed = () => navigator.clipboard.writeText(`${location.origin}/api/stories/${id}/feed.xml`).then(() => toast('คัดลอกลิงก์ RSS แล้ว วางในแอปอ่าน feed ได้เลย'), () => toast('คัดลอกไม่สำเร็จ', 'error'))
 const flip = () => { newestFirst.value = !newestFirst.value; tocPage.value = 1 }
 
@@ -64,6 +71,7 @@ onMounted(async () => {
   try { story.value = await load(); setTitle(story.value.title) } catch (e) { error.value = (e as Error).message }
   loading.value = false
   loadReads(Number(id)).then(s => { readSet.value = s })
+  marks.load()
   if (auth.user) remoteLast.value = (await ok(client.api.me.progress.get()).catch(() => [])).find(p => p.storyId === Number(id))?.no ?? 0
 })
 </script>
@@ -83,6 +91,7 @@ onMounted(async () => {
       <div ref="cta" :class="[readCount ? 'mb-5' : 'mb-10', 'flex flex-wrap gap-3']">
         <Button v-if="startNo" size="lg" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
         <Button v-if="nos.length > 1" variant="outline" size="lg" :to="`/story/${id}/read/${nos[nos.length - 1]}`">ตอนล่าสุด</Button>
+        <Button variant="outline" size="lg" :aria-pressed="marks.has(Number(id))" @click="follow"><BookmarkCheck v-if="marks.has(Number(id))" class="size-5" /><BookmarkPlus v-else class="size-5" />{{ marks.has(Number(id)) ? 'ติดตามแล้ว' : 'ติดตาม' }}</Button>
         <Button v-if="nos.length" variant="ghost" size="lg" :href="`/api/stories/${id}/epub`"><Download class="size-5" />EPUB</Button>
         <Button v-if="nos.length" variant="ghost" size="lg" aria-label="คัดลอกลิงก์ RSS เพื่อติดตามตอนใหม่" @click="copyFeed"><Rss class="size-5" />RSS</Button>
       </div>

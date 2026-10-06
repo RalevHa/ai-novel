@@ -264,8 +264,9 @@ const menu = (c: Chapter) => [
       <Button variant="ghost" size="icon" to="/admin/stories" aria-label="กลับ" class="-ml-2"><ArrowLeft class="size-5" /></Button>
       <h1 class="font-serif text-[26px] font-bold">{{ story.title }}</h1>
       <span :class="['rounded-full px-2.5 py-0.5 text-xs', story.published ? 'bg-success/15 text-fg' : 'bg-fg/10']">{{ story.published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
-      <span v-if="story.spent || usage?.budget" class="muted ml-auto text-sm">
-        <span v-if="story.spent" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">เรื่องนี้ใช้ไป {{ fmtCost(story.spent) }}</span>
+      <span v-if="story.spent || story.views || usage?.budget" class="muted ml-auto text-sm">
+        <span v-if="story.views" title="รวมทุกตอน นับแบบไม่ระบุตัวตน (ไม่เก็บว่าใครอ่าน)">เปิดอ่าน {{ story.views.toLocaleString() }} ครั้ง<template v-if="story.finishes"> · จบ {{ Math.min(100, Math.round(story.finishes / story.views * 100)) }}%</template></span>
+        <span v-if="story.spent" :class="story.views ? 'ml-3' : ''" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">เรื่องนี้ใช้ไป {{ fmtCost(story.spent) }}</span>
         <span v-if="usage?.budget" :class="['ml-3', usage.spent >= usage.budget * 0.8 && 'font-medium text-danger']" title="ค่า AI ของตอนที่เขียนเดือนนี้ เทียบกับ MONTHLY_BUDGET_USD">เดือนนี้ {{ fmtCost(usage.spent) }} / {{ fmtCost(usage.budget) }}</span>
       </span>
     </div>
@@ -317,7 +318,7 @@ const menu = (c: Chapter) => [
             <span class="w-9 shrink-0 text-center tabular-nums text-fg/75">{{ c.no }}</span>
             <span class="min-w-0">
               <span class="block truncate font-serif">{{ c.title || `ตอนที่ ${c.no}` }}</span>
-              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published && !scheduled(c)" class="mr-1" />{{ scheduled(c) ? `ตั้งเวลา ${fmtDateTime(c.publishAt)}` : c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span><span v-if="c.cost != null" :title="`${c.tokens?.toLocaleString()} tokens`"> · {{ fmtCost(c.cost) }}</span></span>
+              <span class="muted mt-0.5 block text-sm"><Dot :on="c.published && !scheduled(c)" class="mr-1" />{{ scheduled(c) ? `ตั้งเวลา ${fmtDateTime(c.publishAt)}` : c.published ? 'เผยแพร่' : 'ฉบับร่าง' }}<span v-if="!c.hasSummary"> · ยังไม่มีสรุป</span><span v-if="c.cost != null" :title="`${c.tokens?.toLocaleString()} tokens`"> · {{ fmtCost(c.cost) }}</span><span v-if="c.views" title="จำนวนครั้งที่เปิดอ่านและอ่านจบ (นับแบบไม่ระบุตัวตน)"> · อ่าน {{ c.views.toLocaleString() }} ครั้ง<template v-if="c.finishes"> (จบ {{ Math.min(100, Math.round(c.finishes / c.views * 100)) }}%)</template></span></span>
             </span>
           </button>
           <Button v-if="!c.published || scheduled(c)" size="sm" class="hidden sm:inline-flex" @click="patchChapter(c, { published: true })">เผยแพร่ตอนนี้</Button>

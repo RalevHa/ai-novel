@@ -1,5 +1,5 @@
 import { cors } from '@elysiajs/cors'
-import { and, asc, desc, eq, inArray, max, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, max, sql } from 'drizzle-orm'
 import { join } from 'node:path'
 import { Elysia, t } from 'elysia'
 import { budget, monthSpent, overBudget } from './budget'
@@ -18,7 +18,7 @@ import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
 import { streamChat, type Usage } from './openrouter'
-import { chapterReads, chapters, chapterVersions, characters, readingProgress, stories, users } from './schema'
+import { bookmarks, chapterReads, chapters, chapterVersions, characters, readingProgress, stories, users } from './schema'
 import { restore, snapshot } from './versions'
 import { liveAt, visible, visibleSql } from './visibility'
 
@@ -113,6 +113,13 @@ const readerRoutes = new Elysia()
     const base = (process.env.PUBLIC_URL || new URL(request.url).origin).replace(/\/$/, '')
     return new Response(atomFeed(s, rows.map(r => ({ ...r, at: new Date(r.at.replace(' ', 'T') + 'Z') })), base), { headers: { 'content-type': 'application/atom+xml; charset=utf-8' } })
   }, id)
+  // Anonymous aggregate counters: how many times a chapter was opened / read to the end. Nothing about who is stored (the IP is only used for the in-memory rate limit).
+  .post('/stories/:id/chapters/:no/view', async ({ params, body, status, request, server }) => {
+    if (limited(`view:${server?.requestIP(request)?.address}`, 300, 60 * 60_000)) return status(429, { error: 'ส่งบ่อยเกินไป' })
+    const rows = await db.update(chapters).set(body.done ? { finishes: sql`${chapters.finishes} + 1` } : { views: sql`${chapters.views} + 1` })
+      .where(and(eq(chapters.storyId, params.id), eq(chapters.no, params.no), visible, sql`exists (select 1 from stories where stories.id = ${chapters.storyId} and stories.published)`)).returning({ id: chapters.id })
+    return rows.length ? { ok: true } : status(404, { error: 'ไม่พบข้อมูล' })
+  }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), body: t.Object({ done: t.Optional(t.Boolean()) }) })
   .get('/stories/:id/chapters/:no', async ({ params, status }) => {
     const [c] = await db.select({ no: chapters.no, title: chapters.title, content: chapters.content }).from(chapters)
       .innerJoin(stories, eq(stories.id, chapters.storyId))
@@ -138,6 +145,13 @@ const meRoutes = new Elysia({ prefix: '/me' })
         .onConflictDoUpdate({ target: [readingProgress.userId, readingProgress.storyId], set: { no: body.no, pos, updatedAt: sql`now()` } })
       return { ok: true }
     }, { ...id, body: t.Object({ no: t.Integer({ minimum: 1 }), pos: t.Optional(t.Number({ minimum: 0, maximum: 1 })) }) })
+    .get('/bookmarks', async ({ me }) => (await db.select({ id: bookmarks.storyId }).from(bookmarks).where(eq(bookmarks.userId, me!.id)).orderBy(desc(bookmarks.createdAt))).map(r => r.id))
+    .put('/bookmarks/:id', async ({ params, me, status }) => {
+      if (!(await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true } }))) return status(404, { error: 'ไม่พบข้อมูล' })
+      await db.insert(bookmarks).values({ userId: me!.id, storyId: params.id }).onConflictDoNothing()
+      return { ok: true }
+    }, id)
+    .delete('/bookmarks/:id', async ({ params, me }) => { await db.delete(bookmarks).where(and(eq(bookmarks.userId, me!.id), eq(bookmarks.storyId, params.id))); return { ok: true } }, id)
     .get('/reads/:id', async ({ params, me }) => (await db.select({ no: chapterReads.no }).from(chapterReads)
       .where(and(eq(chapterReads.userId, me!.id), eq(chapterReads.storyId, params.id))).orderBy(asc(chapterReads.no))).map(r => r.no), id)
     .post('/reads/:id', async ({ params, body, me, status }) => {
@@ -159,28 +173,31 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
 
     // list rows only: the heavy text columns (premise, system prompt) are loaded by GET /stories/:id
     .get('/stories', async ({ query }) => {
-      const total = await db.$count(stories)
+      const q = query.q?.trim()
+      const where = q ? ilike(stories.title, `%${q.replace(/[\\%_]/g, '\\$&')}%`) : undefined // % and _ typed by the admin are literal
+      const total = await db.$count(stories, where)
       const { page, size, offset } = paging(query, total, 'first', 20)
       const items = await db.select({
-        id: stories.id, title: stories.title, genre: stories.genre, coverImage: stories.coverImage, published: stories.published,
+        id: stories.id, title: stories.title, genre: stories.genre, coverImage: stories.coverImage, published: stories.published, status: stories.status,
+        spent: sql<number>`coalesce((select sum(chapters.cost) from chapters where chapters.story_id = stories.id), 0)::float8`,
         chapterCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id)`,
         draftCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id and not chapters.published)`,
-      }).from(stories).orderBy(desc(stories.id)).limit(size).offset(offset)
+      }).from(stories).where(where).orderBy(desc(stories.id)).limit(size).offset(offset)
       return { items, total, page, size }
-    }, { query: pageQuery })
+    }, { query: t.Object({ ...pageQuery.properties, q: t.Optional(t.String()) }) })
     .post('/stories', async ({ body, me }) => (await db.insert(stories).values({ ...body, authorId: me!.id }).returning())[0], { body: storyBody })
     .get('/stories/:id', async ({ params, status }) => {
       const s = await db.query.stories.findFirst({ where: eq(stories.id, params.id) })
       if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
-      const [{ last, spent }] = await db.select({ last: max(chapters.no), spent: sql<number>`coalesce(sum(${chapters.cost}), 0)::float8` }).from(chapters).where(eq(chapters.storyId, s.id))
+      const [{ last, spent, views, finishes }] = await db.select({ last: max(chapters.no), spent: sql<number>`coalesce(sum(${chapters.cost}), 0)::float8`, views: sql<number>`coalesce(sum(${chapters.views}), 0)::int`, finishes: sql<number>`coalesce(sum(${chapters.finishes}), 0)::int` }).from(chapters).where(eq(chapters.storyId, s.id))
       const noSummary = await db.select({ id: chapters.id }).from(chapters).where(and(eq(chapters.storyId, s.id), eq(chapters.summary, ''))).orderBy(asc(chapters.no))
-      return { ...s, nextNo: (last ?? 0) + 1, spent, nextBeat: nextBeat(s.outline) ?? null, missingSummaryIds: noSummary.map(c => c.id) }
+      return { ...s, nextNo: (last ?? 0) + 1, spent, views, finishes, nextBeat: nextBeat(s.outline) ?? null, missingSummaryIds: noSummary.map(c => c.id) }
     }, id)
     // chapter rows without the text, newest page first when `page` is omitted; GET /chapters/:id loads one in full
     .get('/stories/:id/chapters', async ({ params, query }) => {
       const total = await db.$count(chapters, eq(chapters.storyId, params.id))
       const { page, size, offset } = paging(query, total, 'last')
-      const items = await db.select({ id: chapters.id, no: chapters.no, title: chapters.title, published: chapters.published, publishAt: chapters.publishAt, createdAt: chapters.createdAt, hasSummary: sql<boolean>`${chapters.summary} <> ''`, tokens: chapters.tokens, cost: chapters.cost })
+      const items = await db.select({ id: chapters.id, no: chapters.no, title: chapters.title, published: chapters.published, publishAt: chapters.publishAt, createdAt: chapters.createdAt, hasSummary: sql<boolean>`${chapters.summary} <> ''`, tokens: chapters.tokens, cost: chapters.cost, views: chapters.views, finishes: chapters.finishes })
         .from(chapters).where(eq(chapters.storyId, params.id)).orderBy(asc(chapters.no)).limit(size).offset(offset)
       return { items, total, page, size }
     }, { ...id, query: pageQuery })

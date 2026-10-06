@@ -64,6 +64,17 @@ export async function reads(storyId: number) {
   return set
 }
 
+// Anonymous reader statistics: "opened" and "read to the end", at most once per chapter per day per browser. No account, no id is sent.
+const today = () => new Date().toISOString().slice(0, 10)
+function count(kind: 'viewed' | 'finished', storyId: number, no: number) {
+  const key = `${kind}:${storyId}:${no}`
+  if (lsGet(key) === today()) return
+  lsSet(key, today())
+  fetch(`/api/stories/${storyId}/chapters/${no}/view`, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(kind === 'finished' ? { done: true } : {}) }).catch(() => {})
+}
+export const countView = (storyId: number, no: number) => count('viewed', storyId, no)
+export const countFinish = (storyId: number, no: number) => count('finished', storyId, no)
+
 export function markRead(storyId: number, no: number) {
   const have = localReads(storyId)
   if (!have.includes(no)) lsSet(readKey(storyId), JSON.stringify([...have, no]))

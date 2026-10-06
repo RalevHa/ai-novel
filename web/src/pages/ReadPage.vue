@@ -11,7 +11,7 @@ import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
 import { FINISHED, READ_AT, RESTORE_MIN, scrollFraction, scrollTarget } from '../readPos'
 import { chromeHidden, LEADING_OPTIONS, leadingValue, MEASURE_OPTIONS, MEASURES, readingMinutes, swipeDir, type Leading, type Measure } from '../reader'
-import { flush, getPos, markRead, savePos } from '../readState'
+import { countFinish, countView, flush, getPos, markRead, savePos } from '../readState'
 import { setTitle } from '../title'
 import { RATES, useSpeech } from '../tts'
 import { toast } from '../toast'
@@ -105,12 +105,14 @@ async function startReading(storyId: number, chapterNo: number) {
     tracking = true
   }
   savePos(storyId, chapterNo, saved < FINISHED ? saved : 0, true) // records which chapter the reader is on
+  countView(storyId, chapterNo)
   if (doc.scrollHeight <= doc.clientHeight + 4) finish(storyId, chapterNo) // fits on one screen: nothing left to scroll
 }
 function finish(storyId: number, chapterNo: number) {
   if (markedRead) return
   markedRead = true
   markRead(storyId, chapterNo)
+  countFinish(storyId, chapterNo)
 }
 function restartFromTop() {
   userMoved = true; ro?.disconnect(); resumed.value = false

@@ -43,6 +43,13 @@
       "when": 1791300777395,
       "tag": "0005_story_status",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791301086532,
+      "tag": "0006_bookmarks_and_view_counts",
+      "breakpoints": true
     }
   ]
 }

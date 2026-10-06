@@ -9,8 +9,10 @@ import { fmtDate, parseDb } from '../genre'
 import { lsGet, lsSet } from '../ls'
 import { isRecent, shelf, SORTS, type Sort } from '../shelf'
 import { useAuth } from '../stores/auth'
+import { useBookmarks } from '../stores/bookmarks'
 
 const auth = useAuth()
+const marks = useBookmarks()
 const load = () => ok(client.api.stories.get())
 type Story = Awaited<ReturnType<typeof load>>[number]
 const stories = ref<Story[]>([]), loading = ref(true), error = ref(''), genre = ref<string | null>(null)
@@ -19,9 +21,11 @@ const genres = computed(() => [...new Set(stories.value.map(s => s.genre).filter
 // search + order are applied in the browser (the shelf is not paginated); the order is remembered
 const query = ref(''), sort = ref<Sort>(SORTS.some(x => x.k === lsGet('homeSort')) ? lsGet('homeSort') as Sort : 'updated')
 watch(sort, v => lsSet('homeSort', v))
-const shown = computed(() => shelf(stories.value, { q: query.value, genre: genre.value, sort: sort.value }))
-const filtering = computed(() => !!query.value.trim() || genre.value !== null)
-const clearFilters = () => { query.value = ''; genre.value = null }
+const mine = ref(false) // only the stories this reader follows
+const myStories = computed(() => stories.value.filter(s => marks.has(s.id)).length)
+const shown = computed(() => shelf(stories.value, { q: query.value, genre: genre.value, sort: sort.value, ids: mine.value ? new Set(marks.ids) : null }))
+const filtering = computed(() => !!query.value.trim() || genre.value !== null || mine.value)
+const clearFilters = () => { query.value = ''; genre.value = null; mine.value = false }
 const badge = (s: Story) => s.status === 'completed' ? 'จบแล้ว' : isRecent(s.updatedAt) ? 'อัปเดตใหม่' : ''
 const latest = computed(() => stories.value.map(s => parseDb(s.updatedAt)).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0])
 
@@ -41,6 +45,7 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
 onMounted(async () => {
   try { stories.value = await load() } catch (e) { error.value = (e as Error).message }
   loading.value = false
+  marks.load()
   if (auth.user) remote.value = await ok(client.api.me.progress.get()).catch(() => [])
 })
 </script>
@@ -73,9 +78,10 @@ onMounted(async () => {
     <Segmented v-model="sort" :options="SORTS" label="เรียงลำดับ" class="sm:w-72" />
   </div>
 
-  <div v-if="genres.length > 1" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="กรองตามแนว">
-    <button type="button" :class="chip(genre === null)" @click="genre = null">ทั้งหมด</button>
-    <button v-for="g in genres" :key="g" type="button" :class="chip(genre === g)" @click="genre = g">{{ g }}</button>
+  <div v-if="genres.length > 1 || myStories" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="กรองตามแนว">
+    <button type="button" :class="chip(genre === null && !mine)" @click="genre = null; mine = false">ทั้งหมด</button>
+    <button v-if="myStories" type="button" :class="chip(mine)" :aria-pressed="mine" @click="mine = !mine">ติดตามแล้ว ({{ myStories }})</button>
+    <button v-for="g in genres" :key="g" type="button" :class="chip(genre === g)" @click="genre = genre === g ? null : g">{{ g }}</button>
   </div>
 
   <div v-if="loading" class="shelf" aria-hidden="true"><div v-for="i in 4" :key="i" class="aspect-[2/3] animate-pulse rounded bg-fg/10" /></div>
