@@ -77,14 +77,15 @@ cd web && bun run dev         # หน้าเว็บ → http://localhost:51
 
 ```bash
 winget install Ollama.Ollama
-ollama pull scb10x/typhoon2.1-gemma3-12b      # โมเดลไทย รุ่น 12B (ใส่ GPU 12 GB ได้ทั้งตัว)
+ollama pull gemma4:12b                        # รุ่น 12B (ใส่ GPU 12 GB ได้ทั้งตัว)
 # ตั้งตัวแปรสภาพแวดล้อมของ Ollama แล้วรีสตาร์ต Ollama: OLLAMA_CONTEXT_LENGTH=32768
-ollama run scb10x/typhoon2.1-gemma3-12b --verbose   # ลองไทย + ดู tokens/วินาที
+ollama run gemma4:12b --verbose               # ลองไทย + ดู tokens/วินาที
 ```
 
-ตัวอย่างค่าในช่อง Model: `local:scb10x/typhoon2.1-gemma3-12b`
+ตัวอย่างค่าในช่อง Model: `local:gemma4:12b`
 
 - **ต้องตั้ง context ให้ใหญ่** ระบบส่งสรุปตอนก่อน + 2 ตอนล่าสุดเต็ม + ตัวละคร (20k+ tokens) ถ้า context เริ่มต้นของ Ollama เล็กกว่านั้น บริบทจะถูกตัดโดยไม่มีข้อความเตือน ตรวจด้วย `ollama ps` ว่า `CONTEXT` ตรงกับที่ตั้ง
+- ทดสอบแล้วกับ RTX 5070 (12 GB) + Ollama 0.35.1: `gemma4:12b` ใส่ GPU ได้ทั้งตัวที่ context 32768 (ใช้ VRAM ~10.6 GB) เขียนไทยได้ และจำข้อมูลกลางข้อความยาว 30,000 ตัวอักษรได้ ส่วน `scb10x/typhoon2.1-gemma3-12b` โหลดไม่ขึ้นกับ Ollama รุ่นนี้ (template ในไฟล์โมเดลถูกปฏิเสธ: `selectattr: unknown test 'tool_calls'`) จึงยังไม่ได้ใช้
 - โมเดลในเครื่องไม่รายงาน `cost` หน้า admin จึงแสดงค่าใช้จ่าย $0 (มี tokens)
 - ต้องเปิด Ollama ค้างไว้ตอนใช้งาน ถ้าเชื่อมต่อไม่ได้ ระบบแจ้งเป็นข้อความในหน้าเขียนตอน
 - โมเดลขนาด 12B เขียนไทยยาวได้ไม่เท่าโมเดลคลาวด์ ควรเทียบผลในแท็บ "เขียนใหม่" ก่อนใช้จริง
