@@ -28,6 +28,8 @@ export const auth = new Elysia({ name: 'auth' })
 // status() (not set.status) keeps the error out of the success response type that Eden infers
 export const adminOnly = { beforeHandle: ({ me }: { me: { role: Role } | null }) => { if (me?.role !== 'admin') return status(me ? 403 : 401, { error: 'ต้องเป็นผู้ดูแลระบบเท่านั้น' }) } }
 
+export const userOnly = { beforeHandle: ({ me }: { me: { role: Role } | null }) => { if (!me) return status(401, { error: 'ต้องเข้าสู่ระบบก่อน' }) } }
+
 /** Create the admin from env on first boot. */
 export async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL, password = process.env.ADMIN_PASSWORD

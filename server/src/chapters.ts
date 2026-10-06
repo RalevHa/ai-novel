@@ -1,7 +1,7 @@
-import { eq, max } from 'drizzle-orm'
+import { eq, max, sql } from 'drizzle-orm'
 import { db } from './db'
 import { normalizeParagraphs, stripImages } from './markdown'
-import { chat, DEFAULT_MODEL } from './openrouter'
+import { chat, DEFAULT_MODEL, type Usage } from './openrouter'
 import { chapters, stories } from './schema'
 
 const nextNo = async (storyId: number) =>
@@ -40,11 +40,13 @@ export async function summarizeChapter(id: number, model?: string) {
   const text = stripImages(c.content)
   const short = text.length < SHORT_CHAPTER
   const m = model || (await db.query.stories.findFirst({ where: eq(stories.id, c.storyId) }))?.model || DEFAULT_MODEL
+  let spent = undefined as Usage | undefined
   const summary = short ? text.replace(/\s+/g, ' ') : await chat(m, [
     { role: 'system', content: SUMMARY_PROMPT },
     { role: 'user', content: `ชื่อตอน: ${c.title}\n\n${text.slice(0, 30_000)}` },
-  ])
+  ], u => { spent = u })
   if (!summary) throw new Error('โมเดลไม่ส่งสรุปกลับมา ลองใหม่อีกครั้ง')
-  await db.update(chapters).set({ summary }).where(eq(chapters.id, id))
+  // the recap is paid for too, so it counts toward the chapter's cost
+  await db.update(chapters).set({ summary, ...(spent && { tokens: sql`coalesce(${chapters.tokens}, 0) + ${spent.tokens}`, cost: sql`coalesce(${chapters.cost}, 0) + ${spent.cost}` }) }).where(eq(chapters.id, id))
   return summary
 }

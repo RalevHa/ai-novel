@@ -1,4 +1,4 @@
-import { boolean, index, integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { boolean, doublePrecision, index, integer, pgTable, primaryKey, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -34,6 +34,8 @@ export const chapters = pgTable('chapters', {
   instruction: text('instruction').notNull().default(''),
   model: text('model').notNull().default(''),
   published: boolean('published').notNull().default(false), // AI writes a draft, admin publishes
+  tokens: integer('tokens'), // total tokens spent writing + summarising; null = unknown (older chapters, or the stream stopped before OpenRouter reported usage)
+  cost: doublePrecision('cost'), // USD (OpenRouter credits), same caveat as tokens
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [unique('chapters_story_no_key').on(t.storyId, t.no)])
 
@@ -47,3 +49,11 @@ export const characters = pgTable('characters', {
   visible: boolean('visible').notNull().default(true), // shown to readers on the story page
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [index('characters_story_id_idx').on(t.storyId)])
+
+// where each signed-in reader stopped, so "continue reading" follows them across devices
+export const readingProgress = pgTable('reading_progress', {
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
+  no: integer('no').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.userId, t.storyId] })])

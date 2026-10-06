@@ -2,7 +2,7 @@ import { cors } from '@elysiajs/cors'
 import { and, asc, desc, eq, inArray, max, sql } from 'drizzle-orm'
 import { join } from 'node:path'
 import { Elysia, t } from 'elysia'
-import { adminOnly, assertConfig, auth, prod, seedAdmin } from './auth'
+import { adminOnly, assertConfig, auth, prod, seedAdmin, userOnly } from './auth'
 import { addChapter, summarizeChapter } from './chapters'
 import { suggestCharacters } from './characters'
 import { buildContext } from './context'
@@ -13,8 +13,8 @@ import { forgive, limited } from './ratelimit'
 import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
-import { streamChat } from './openrouter'
-import { chapters, characters, stories, users } from './schema'
+import { streamChat, type Usage } from './openrouter'
+import { chapters, characters, readingProgress, stories, users } from './schema'
 
 const id = { params: t.Object({ id: t.Numeric() }) }
 const characterBody = t.Object({ name: t.String({ minLength: 1 }), role: t.Optional(t.String()), profile: t.Optional(t.String()), visible: t.Optional(t.Boolean()) })
@@ -90,6 +90,22 @@ const readerRoutes = new Elysia()
     return c ?? status(404, { error: 'ไม่พบข้อมูล' })
   }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
 
+// Signed-in readers: where they stopped in each story
+const meRoutes = new Elysia({ prefix: '/me' })
+  .use(auth)
+  .guard(userOnly, app => app
+    .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, updatedAt: readingProgress.updatedAt })
+      .from(readingProgress).where(eq(readingProgress.userId, me!.id)).orderBy(desc(readingProgress.updatedAt)))
+    .put('/progress/:id', async ({ params, body, me, status }) => {
+      // only published chapters can be bookmarked, which also keeps the story foreign key valid
+      const [c] = await db.select({ id: chapters.id }).from(chapters).innerJoin(stories, eq(stories.id, chapters.storyId))
+        .where(and(eq(chapters.storyId, params.id), eq(chapters.no, body.no), eq(chapters.published, true), eq(stories.published, true)))
+      if (!c) return status(404, { error: 'ไม่พบข้อมูล' })
+      await db.insert(readingProgress).values({ userId: me!.id, storyId: params.id, no: body.no })
+        .onConflictDoUpdate({ target: [readingProgress.userId, readingProgress.storyId], set: { no: body.no, updatedAt: sql`now()` } })
+      return { ok: true }
+    }, { ...id, body: t.Object({ no: t.Integer({ minimum: 1 }) }) }))
+
 const adminRoutes = new Elysia({ prefix: '/admin' })
   .use(auth)
   .guard(adminOnly, app => app
@@ -114,15 +130,15 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
     .get('/stories/:id', async ({ params, status }) => {
       const s = await db.query.stories.findFirst({ where: eq(stories.id, params.id) })
       if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
-      const [{ last }] = await db.select({ last: max(chapters.no) }).from(chapters).where(eq(chapters.storyId, s.id))
+      const [{ last, spent }] = await db.select({ last: max(chapters.no), spent: sql<number>`coalesce(sum(${chapters.cost}), 0)::float8` }).from(chapters).where(eq(chapters.storyId, s.id))
       const noSummary = await db.select({ id: chapters.id }).from(chapters).where(and(eq(chapters.storyId, s.id), eq(chapters.summary, ''))).orderBy(asc(chapters.no))
-      return { ...s, nextNo: (last ?? 0) + 1, missingSummaryIds: noSummary.map(c => c.id) }
+      return { ...s, nextNo: (last ?? 0) + 1, spent, missingSummaryIds: noSummary.map(c => c.id) }
     }, id)
     // chapter rows without the text, newest page first when `page` is omitted; GET /chapters/:id loads one in full
     .get('/stories/:id/chapters', async ({ params, query }) => {
       const total = await db.$count(chapters, eq(chapters.storyId, params.id))
       const { page, size, offset } = paging(query, total, 'last')
-      const items = await db.select({ id: chapters.id, no: chapters.no, title: chapters.title, published: chapters.published, createdAt: chapters.createdAt, hasSummary: sql<boolean>`${chapters.summary} <> ''` })
+      const items = await db.select({ id: chapters.id, no: chapters.no, title: chapters.title, published: chapters.published, createdAt: chapters.createdAt, hasSummary: sql<boolean>`${chapters.summary} <> ''`, tokens: chapters.tokens, cost: chapters.cost })
         .from(chapters).where(eq(chapters.storyId, params.id)).orderBy(asc(chapters.no)).limit(size).offset(offset)
       return { items, total, page, size }
     }, { ...id, query: pageQuery })
@@ -250,9 +266,9 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
 
       // Save in `finally`: it also runs when the client drops mid-stream (refresh, stop button),
       // so what was already generated (and paid for) is kept as a draft instead of being lost.
-      let acc = '', complete = false, looped = false
+      let acc = '', complete = false, looped = false, usage = undefined as Usage | undefined
       try {
-        for await (const d of streamChat(model, messages)) {
+        for await (const d of streamChat(model, messages, u => { usage = u })) {
           acc += d; yield d
           const at = loopStart(acc)
           if (at !== -1) {
@@ -270,7 +286,7 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
         if (content) {
           const title = content.split('\n')[0].replace(/^#+\s*/, '').slice(0, 110) + (complete ? '' : ' (ไม่ครบ)')
           try {
-            const row = await addChapter(story.id, { title, content, instruction: body.instruction ?? '', model })
+            const row = await addChapter(story.id, { title, content, instruction: body.instruction ?? '', model, tokens: usage?.tokens, cost: usage?.cost })
             // recap runs in the background so the stream can close; skipped for cut-off chapters
             if (complete) summarizeChapter(row.id, model).catch(e => console.error('summary failed', e))
           } catch (e) { console.error('failed to save generated chapter', e) }
@@ -284,6 +300,7 @@ export const app = new Elysia({ prefix: '/api' })
   .get('/health', () => 'ok')
   .use(authRoutes)
   .use(readerRoutes)
+  .use(meRoutes)
   .use(adminRoutes)
 
 export type App = typeof app
