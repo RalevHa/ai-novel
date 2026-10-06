@@ -2,13 +2,14 @@ import { cors } from '@elysiajs/cors'
 import { and, asc, desc, eq, inArray, max, sql } from 'drizzle-orm'
 import { join } from 'node:path'
 import { Elysia, t } from 'elysia'
-import { adminOnly, auth, seedAdmin } from './auth'
+import { adminOnly, assertConfig, auth, prod, seedAdmin } from './auth'
 import { addChapter, summarizeChapter } from './chapters'
 import { suggestCharacters } from './characters'
 import { buildContext } from './context'
 import { loopStart } from './guard'
 import { imageNames, stripImages } from './markdown'
 import { pageQuery, paging } from './paging'
+import { forgive, limited } from './ratelimit'
 import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
@@ -19,7 +20,8 @@ const id = { params: t.Object({ id: t.Numeric() }) }
 const characterBody = t.Object({ name: t.String({ minLength: 1 }), role: t.Optional(t.String()), profile: t.Optional(t.String()), visible: t.Optional(t.Boolean()) })
 // type/size are checked by saveImage (magic bytes), so the error message can be shown to the admin as-is
 const imageBody = t.Object({ file: t.File() })
-const cookieOpts = { httpOnly: true, sameSite: 'lax' as const, path: '/', maxAge: 30 * 86400 }
+const cookieOpts = { httpOnly: true, secure: prod, sameSite: 'lax' as const, path: '/', maxAge: 30 * 86400 }
+const WINDOW = 15 * 60_000
 const publicUser = { id: users.id, email: users.email, name: users.name, role: users.role, createdAt: users.createdAt }
 
 const storyBody = t.Object({
@@ -35,15 +37,21 @@ const storyBody = t.Object({
 
 const authRoutes = new Elysia({ prefix: '/auth' })
   .use(auth)
-  .post('/register', async ({ body, jwt, cookie: { token }, status }) => {
+  .post('/register', async ({ body, jwt, cookie: { token }, status, request, server }) => {
+    if (process.env.ALLOW_REGISTRATION === 'false') return status(403, { error: 'ปิดรับสมัครสมาชิก' })
+    if (limited(`register:${server?.requestIP(request)?.address}`, 5, 60 * 60_000)) return status(429, { error: 'สมัครบ่อยเกินไป ลองใหม่ภายหลัง' })
     if (await db.query.users.findFirst({ where: eq(users.email, body.email) })) return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' })
     const [u] = await db.insert(users).values({ ...body, passwordHash: await Bun.password.hash(body.password) }).returning(publicUser)
     token.set({ value: await jwt.sign({ sub: String(u.id), role: u.role }), ...cookieOpts })
     return u
   }, { body: t.Object({ email: t.String({ format: 'email' }), name: t.String({ minLength: 1 }), password: t.String({ minLength: 8 }) }) })
-  .post('/login', async ({ body, jwt, cookie: { token }, status }) => {
+  .post('/login', async ({ body, jwt, cookie: { token }, status, request, server }) => {
+    // per IP + email: guessing one account from one address is capped, without letting a stranger lock the admin out from elsewhere
+    const key = `login:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`
+    if (limited(key, 10, WINDOW)) return status(429, { error: 'ลองเข้าสู่ระบบบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email) })
     if (!u || !(await Bun.password.verify(body.password, u.passwordHash))) return status(401, { error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
+    forgive(key)
     token.set({ value: await jwt.sign({ sub: String(u.id), role: u.role }), ...cookieOpts })
     return { id: u.id, email: u.email, name: u.name, role: u.role }
   }, { body: t.Object({ email: t.String(), password: t.String() }) })
@@ -271,7 +279,8 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
     }, { ...id, body: t.Object({ instruction: t.Optional(t.String()) }) }))
 
 export const app = new Elysia({ prefix: '/api' })
-  .use(cors({ origin: true, credentials: true }))
+  // dev: any origin (Vite proxy). prod: same-origin only unless CORS_ORIGIN lists the web origin(s), comma separated
+  .use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : prod ? [] : true, credentials: true }))
   .get('/health', () => 'ok')
   .use(authRoutes)
   .use(readerRoutes)
@@ -282,6 +291,7 @@ export type App = typeof app
 if (import.meta.main) {
   // a client dropping mid-stream rejects the aborted upstream read; that is expected, not fatal
   process.on('unhandledRejection', e => { if ((e as Error)?.name !== 'AbortError') throw e })
+  assertConfig()
   await seedAdmin()
   const sweep = () => sweepOrphans().catch(e => console.error('upload sweep failed', e))
   sweep(); setInterval(sweep, 6 * 60 * 60 * 1000).unref()

@@ -51,6 +51,9 @@ cd web && bun run dev         # หน้าเว็บ → http://localhost:51
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | บัญชี admin ตั้งต้น **ต้องเปลี่ยนก่อนใช้งานจริง** |
 | `MAX_OUTPUT_TOKENS` | เพดานความยาวที่ AI เขียนต่อหนึ่งตอน (กันโมเดลที่วนซ้ำกินเงิน) |
 | `UPLOAD_DIR` | ที่เก็บรูปที่อัปโหลด เว้นว่าง = `server/uploads` |
+| `NODE_ENV` | ตั้งเป็น `production` ตอน deploy: cookie เป็น `secure`, CORS ปิด (same-origin) และ server ไม่ยอมเริ่มถ้า `JWT_SECRET` สั้นกว่า 32 ตัวอักษร / ยังเป็น `change-me` หรือ `ADMIN_PASSWORD` ยังเป็นค่าตัวอย่าง |
+| `CORS_ORIGIN` | origin ของหน้าเว็บ (คั่นด้วย `,`) ใช้เฉพาะเมื่อหน้าเว็บกับ API อยู่คนละโดเมน |
+| `ALLOW_REGISTRATION` | `false` = ปิดรับสมัครสมาชิก (ค่าเริ่มต้นเปิด) |
 
 ## ข้อควรรู้
 

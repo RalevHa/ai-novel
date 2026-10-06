@@ -6,11 +6,23 @@ import { users } from './schema'
 
 export type Role = 'admin' | 'user'
 
+export const prod = process.env.NODE_ENV === 'production'
+
+/** Refuse to boot with a missing or placeholder secret; session tokens are only as strong as JWT_SECRET. */
+export function assertConfig() {
+  const secret = process.env.JWT_SECRET
+  if (!secret) throw new Error('JWT_SECRET is not set')
+  if (prod && (secret === 'change-me' || secret.length < 32)) throw new Error('JWT_SECRET must be a random string of 32+ characters in production')
+  if (prod && process.env.ADMIN_PASSWORD === 'admin1234') throw new Error('Change ADMIN_PASSWORD from the example value before running in production')
+}
+
 export const auth = new Elysia({ name: 'auth' })
   .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET!, exp: '30d' }))
   .derive({ as: 'global' }, async ({ jwt, cookie: { token } }) => {
     const p = token.value ? await jwt.verify(token.value as string) : false
-    return { me: p ? { id: Number(p.sub), role: p.role as Role } : null }
+    // role comes from the DB, not the token: demoting or deleting a user takes effect on their next request
+    const u = p && (await db.select({ role: users.role }).from(users).where(eq(users.id, Number(p.sub))))[0]
+    return { me: p && u ? { id: Number(p.sub), role: u.role as Role } : null }
   })
 
 // status() (not set.status) keeps the error out of the success response type that Eden infers
