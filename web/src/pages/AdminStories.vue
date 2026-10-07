@@ -64,7 +64,7 @@ const menu = (r: Row) => [
 
   <div v-if="usage && (usage.budget || usage.spent)" class="mb-4 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
     <div class="flex items-center justify-between gap-3">
-      <span>ค่า AI เดือนนี้</span>
+      <span title="ที่คีย์ของเว็บจ่าย ไม่รวมที่นักเขียนจ่ายด้วยคีย์ของตัวเอง">ค่า AI เดือนนี้ (คีย์ของเว็บ)</span>
       <span :class="usage.budget && usage.spent >= usage.budget * 0.8 ? 'font-medium text-danger' : 'font-medium'">{{ fmtCost(usage.spent) }}<template v-if="usage.budget"> / {{ fmtCost(usage.budget) }}</template></span>
     </div>
     <div v-if="usage.budget" class="mt-2 h-1.5 overflow-hidden rounded-full bg-fg/10" role="progressbar" aria-label="งบ AI เดือนนี้" aria-valuemin="0" :aria-valuenow="Math.round(usage.spent * 100) / 100" :aria-valuemax="usage.budget">

@@ -1,13 +1,13 @@
-import { gte, sql } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import { db } from './db'
-import { chapters } from './schema'
+import { aiUsage } from './schema'
 
 /** Monthly spending cap in USD from MONTHLY_BUDGET_USD; 0 = no cap. */
 export const budget = () => Number(process.env.MONTHLY_BUDGET_USD) || 0
 
-/** Cost of the chapters written this month (what OpenRouter reported; chapters without a figure count as 0). */
+/** What the site's own key paid for this month (every call to a model, from ai_usage; writers' own keys are not counted). */
 export async function monthSpent() {
-  const [r] = await db.select({ n: sql<number>`coalesce(sum(${chapters.cost}), 0)::float8` }).from(chapters).where(gte(chapters.createdAt, sql`date_trunc('month', now())`))
+  const [r] = await db.select({ n: sql<number>`coalesce(sum(${aiUsage.cost}), 0)::float8` }).from(aiUsage).where(and(eq(aiUsage.source, 'site'), gte(aiUsage.createdAt, sql`date_trunc('month', now())`)))
   return r.n
 }
 

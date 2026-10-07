@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAuth } from '../stores/auth'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { ArrowLeft, Eye, EyeOff, EllipsisVertical, Pencil, Sparkles, Square, Trash2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
@@ -146,6 +147,10 @@ async function goto(p: number) {
   try { const r = await loadChapters(); chapters.value = r.items; total.value = r.total; page.value = r.page } catch (e) { toastError(e) }
 }
 onMounted(refresh)
+// a writer needs their own OpenRouter key before any AI button works (admins can use the site's)
+const auth = useAuth()
+const noAiKey = ref(false)
+onMounted(async () => { if (!auth.isAdmin) { try { noAiKey.value = !(await ok(client.api.me['ai-key'].get())).canUseAi } catch { /* no banner */ } } })
 onBeforeUnmount(() => { removeEventListener('beforeunload', warnUnload); ctrl?.abort(); rwCtrl?.abort() })
 
 async function saveStory(body: StoryInput) {
@@ -267,9 +272,11 @@ const menu = (c: Chapter) => [
       <span v-if="story.spent || story.views || usage?.budget" class="muted ml-auto text-sm">
         <span v-if="story.views" title="รวมทุกตอน นับแบบไม่ระบุตัวตน (ไม่เก็บว่าใครอ่าน)">เปิดอ่าน {{ story.views.toLocaleString() }} ครั้ง<template v-if="story.finishes"> · จบ {{ Math.min(100, Math.round(story.finishes / story.views * 100)) }}%</template></span>
         <span v-if="story.spent" :class="story.views ? 'ml-3' : ''" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">เรื่องนี้ใช้ไป {{ fmtCost(story.spent) }}</span>
-        <span v-if="usage?.budget" :class="['ml-3', usage.spent >= usage.budget * 0.8 && 'font-medium text-danger']" title="ค่า AI ของตอนที่เขียนเดือนนี้ เทียบกับ MONTHLY_BUDGET_USD">เดือนนี้ {{ fmtCost(usage.spent) }} / {{ fmtCost(usage.budget) }}</span>
+        <span v-if="usage?.budget" :class="['ml-3', usage.spent >= usage.budget * 0.8 && 'font-medium text-danger']" title="ค่า AI ที่คีย์ของเว็บจ่ายเดือนนี้ (ไม่รวมที่นักเขียนจ่ายด้วยคีย์ตัวเอง) เทียบกับ MONTHLY_BUDGET_USD">เดือนนี้ {{ fmtCost(usage.spent) }} / {{ fmtCost(usage.budget) }}</span>
       </span>
     </div>
+
+    <p v-if="noAiKey" class="mb-4 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-sm" role="status">ยังไม่ได้ตั้งคีย์ AI ของคุณ ปุ่มที่ใช้ AI (เขียนตอน เขียนใหม่ สรุป ตรวจความต่อเนื่อง เสนอตัวละคร) จะใช้ไม่ได้จนกว่าจะตั้งคีย์ OpenRouter ของคุณเองที่<router-link to="/profile" class="ml-1 text-primary underline underline-offset-2">หน้าโปรไฟล์ของฉัน</router-link> ค่าใช้จ่ายเป็นของคุณ เขียนตอนด้วยตัวเองได้ตามปกติ</p>
 
     <Tabs v-model="tab" :items="[{ value: 'chapters', label: 'ตอน' }, { value: 'characters', label: 'ตัวละคร' }, { value: 'settings', label: 'ตั้งค่าเรื่อง' }]" class="mb-5" />
 
