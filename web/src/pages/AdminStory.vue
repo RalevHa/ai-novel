@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { aiHeaders, hasAiKey } from '../aiKey'
-import { useAuth } from '../stores/auth'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { ArrowLeft, Eye, EyeOff, EllipsisVertical, Pencil, Sparkles, Square, Trash2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
@@ -40,9 +38,6 @@ const missingSummaries = computed(() => story.value?.missingSummaryIds ?? [])
 const editOrig = ref('') // JSON of the chapter when the dialog opened, to warn before discarding changes
 const summarizing = ref(false), backfill = ref<{ done: number; total: number } | null>(null)
 
-// this month's AI spending against MONTHLY_BUDGET_USD (budget 0 = no cap)
-const usage = ref<{ spent: number; budget: number } | null>(null)
-const loadUsage = () => ok(client.api.admin.usage.get()).then(u => { usage.value = u }).catch(() => {})
 
 // generate: `fromOutline` takes the story's next planned chapter; `count` writes that many in a row
 const instruction = ref(''), out = ref(''), streaming = ref(false)
@@ -93,7 +88,7 @@ const check = ref({ report: '', busy: false })
 async function runCheck() {
   if (!edit.value) return
   check.value = { report: '', busy: true }
-  try { check.value.report = (await ok(client.api.admin.chapters({ id: edit.value.id }).check.post(undefined, { headers: aiHeaders() }))).report; loadUsage() }
+  try { check.value.report = (await ok(client.api.admin.chapters({ id: edit.value.id }).check.post())).report  }
   catch (e) { toastError(e) } finally { check.value.busy = false }
 }
 
@@ -110,7 +105,7 @@ async function rewrite() {
   try {
     const r = await fetch(`/api/admin/chapters/${edit.value.id}/rewrite`, {
       method: 'POST', credentials: 'include', signal: rwCtrl.signal,
-      headers: { 'Content-Type': 'application/json', ...aiHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: rw.value.model, instruction: rw.value.note }),
     })
     if (!r.ok || !r.body) throw new Error((await r.text()) || `HTTP ${r.status}`)
@@ -141,16 +136,15 @@ async function refresh() {
     story.value = s; setTitle(`จัดการ ${s.title}`); chapters.value = r.items; total.value = r.total; page.value = r.page
     if (!s.nextBeat) fromOutline.value = false
   } catch (e) { toastError(e) }
-  loadUsage()
 }
 async function goto(p: number) {
   page.value = p
   try { const r = await loadChapters(); chapters.value = r.items; total.value = r.total; page.value = r.page } catch (e) { toastError(e) }
 }
 onMounted(refresh)
-// a writer needs their own OpenRouter key before any AI button works (admins can use the site's)
-const auth = useAuth()
-const noAiKey = computed(() => !auth.isAdmin && !hasAiKey.value)
+// everyone, admins too, needs their own OpenRouter key before the AI buttons work (the site has no key of its own)
+const noAiKey = ref(false)
+onMounted(async () => { try { noAiKey.value = !(await ok(client.api.me['ai-key'].get())).canUseAi } catch { /* no banner */ } })
 onBeforeUnmount(() => { removeEventListener('beforeunload', warnUnload); ctrl?.abort(); rwCtrl?.abort() })
 
 async function saveStory(body: StoryInput) {
@@ -192,7 +186,7 @@ async function removeChapter() {
 
 // AI recap of one chapter (the AI reads these as memory when writing the next chapters)
 async function summarize(c: { id: number }) {
-  const r = await ok(client.api.admin.chapters({ id: c.id }).summarize.post(undefined, { headers: aiHeaders() }))
+  const r = await ok(client.api.admin.chapters({ id: c.id }).summarize.post())
   return r.summary
 }
 async function summarizeEdit() {
@@ -220,7 +214,7 @@ async function generateOne() {
   out.value = ''
   const r = await fetch(`/api/admin/stories/${id}/generate`, {
     method: 'POST', credentials: 'include', signal: ctrl!.signal,
-    headers: { 'Content-Type': 'application/json', ...aiHeaders() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instruction: instruction.value, fromOutline: fromOutline.value }),
   })
   if (!r.ok || !r.body) throw new Error((await r.text()) || `HTTP ${r.status}`)
@@ -269,14 +263,13 @@ const menu = (c: Chapter) => [
       <Button variant="ghost" size="icon" to="/admin/stories" aria-label="กลับ" class="-ml-2"><ArrowLeft class="size-5" /></Button>
       <h1 class="font-serif text-[26px] font-bold">{{ story.title }}</h1>
       <span :class="['rounded-full px-2.5 py-0.5 text-xs', story.published ? 'bg-success/15 text-fg' : 'bg-fg/10']">{{ story.published ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
-      <span v-if="story.spent || story.views || usage?.budget" class="muted ml-auto text-sm">
+      <span v-if="story.spent || story.views" class="muted ml-auto text-sm">
         <span v-if="story.views" title="รวมทุกตอน นับแบบไม่ระบุตัวตน (ไม่เก็บว่าใครอ่าน)">เปิดอ่าน {{ story.views.toLocaleString() }} ครั้ง<template v-if="story.finishes"> · จบ {{ Math.min(100, Math.round(story.finishes / story.views * 100)) }}%</template></span>
         <span v-if="story.spent" :class="story.views ? 'ml-3' : ''" title="รวมค่าเขียนและสรุปทุกตอนที่ระบบบันทึกไว้">เรื่องนี้ใช้ไป {{ fmtCost(story.spent) }}</span>
-        <span v-if="usage?.budget" :class="['ml-3', usage.spent >= usage.budget * 0.8 && 'font-medium text-danger']" title="ค่า AI ที่คีย์ของเว็บจ่ายเดือนนี้ (ไม่รวมที่นักเขียนจ่ายด้วยคีย์ตัวเอง) เทียบกับ MONTHLY_BUDGET_USD">เดือนนี้ {{ fmtCost(usage.spent) }} / {{ fmtCost(usage.budget) }}</span>
       </span>
     </div>
 
-    <p v-if="noAiKey" class="mb-4 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-sm" role="status">ยังไม่ได้ตั้งคีย์ AI ของคุณ ปุ่มที่ใช้ AI (เขียนตอน เขียนใหม่ สรุป ตรวจความต่อเนื่อง เสนอตัวละคร) จะใช้ไม่ได้จนกว่าจะตั้งคีย์ OpenRouter ของคุณเองที่<router-link to="/profile" class="ml-1 text-primary underline underline-offset-2">หน้าโปรไฟล์ของฉัน</router-link> ค่าใช้จ่ายเป็นของคุณ เขียนตอนด้วยตัวเองได้ตามปกติ</p>
+    <p v-if="noAiKey" class="mb-4 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-sm" role="status">ยังไม่ได้ตั้งคีย์ AI ของคุณ ปุ่มที่ใช้ AI (เขียนตอน เขียนใหม่ สรุป ตรวจความต่อเนื่อง เสนอตัวละคร) จะใช้ไม่ได้จนกว่าจะตั้งคีย์ OpenRouter ของคุณเองที่<router-link to="/profile" class="ml-1 text-primary underline underline-offset-2">หน้าโปรไฟล์ของฉัน</router-link> ค่าใช้จ่ายเป็นของคุณ เขียนตอนด้วยตัวเองได้ตามปกติ (ผู้ดูแลระบบใช้โมเดล local: ได้โดยไม่ต้องมีคีย์)</p>
 
     <Tabs v-model="tab" :items="[{ value: 'chapters', label: 'ตอน' }, { value: 'characters', label: 'ตัวละคร' }, { value: 'settings', label: 'ตั้งค่าเรื่อง' }]" class="mb-5" />
 

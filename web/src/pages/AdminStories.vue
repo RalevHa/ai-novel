@@ -26,9 +26,7 @@ const refresh = async () => {
   try { const r = await load(); rows.value = r.items; total.value = r.total; page.value = r.page } catch (e) { toastError(e) }
   loading.value = false
 }
-// this month's AI spending against MONTHLY_BUDGET_USD (0 = no cap)
-const usage = ref<{ spent: number; budget: number } | null>(null)
-onMounted(() => { refresh(); ok(client.api.admin.usage.get()).then(u => { usage.value = u }).catch(() => {}) })
+onMounted(refresh)
 watch(page, refresh)
 let typing: ReturnType<typeof setTimeout> | undefined
 watch(q, () => { clearTimeout(typing); typing = setTimeout(() => { page.value === 1 ? refresh() : (page.value = 1) }, 300) }) // back to page 1, then the page watcher reloads
@@ -60,16 +58,6 @@ const menu = (r: Row) => [
   <div class="mb-6 flex items-center">
     <h1 class="flex-1 font-serif text-[26px] font-bold">จัดการนิยาย</h1>
     <Button class="hidden md:inline-flex" @click="dialog = true"><Plus class="size-5" />สร้างเรื่องใหม่</Button>
-  </div>
-
-  <div v-if="usage && (usage.budget || usage.spent)" class="mb-4 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
-    <div class="flex items-center justify-between gap-3">
-      <span title="ที่คีย์ของเว็บจ่าย ไม่รวมที่นักเขียนจ่ายด้วยคีย์ของตัวเอง">ค่า AI เดือนนี้ (คีย์ของเว็บ)</span>
-      <span :class="usage.budget && usage.spent >= usage.budget * 0.8 ? 'font-medium text-danger' : 'font-medium'">{{ fmtCost(usage.spent) }}<template v-if="usage.budget"> / {{ fmtCost(usage.budget) }}</template></span>
-    </div>
-    <div v-if="usage.budget" class="mt-2 h-1.5 overflow-hidden rounded-full bg-fg/10" role="progressbar" aria-label="งบ AI เดือนนี้" aria-valuemin="0" :aria-valuenow="Math.round(usage.spent * 100) / 100" :aria-valuemax="usage.budget">
-      <div :class="['h-full rounded-full', usage.spent >= usage.budget * 0.8 ? 'bg-danger' : 'bg-primary']" :style="{ width: `${Math.min(100, (usage.spent / usage.budget) * 100)}%` }" />
-    </div>
   </div>
 
   <div v-if="total || q" class="relative mb-4">

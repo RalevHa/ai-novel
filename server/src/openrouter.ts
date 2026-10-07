@@ -11,7 +11,7 @@ const toUsage = (u: any): Usage => ({ tokens: Number(u.total_tokens) || 0, cost:
 export const API_BASE = (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '')
 const URL = `${API_BASE}/chat/completions`
 
-/** Who pays and what they may reach: `apiKey` is a writer's own OpenRouter key (the site's key is used when absent); local models only for the site's admins. */
+/** Who pays and what they may reach: `apiKey` is the requester's own OpenRouter key (there is no site key); local models only for the site's admins. */
 export type AiAccess = { apiKey?: string; allowLocal?: boolean }
 const LOCAL = 'local:'
 const isLocal = (model: string) => model.startsWith(LOCAL)
@@ -24,7 +24,9 @@ async function send(model: string, body: { messages: Msg[]; stream?: boolean }, 
   const local = isLocal(model)
   if (local && access && !access.allowLocal) throw new Error('โมเดลในเครื่อง (local:) ใช้ได้เฉพาะผู้ดูแลระบบ เลือกโมเดลของ OpenRouter แทน')
   const base = (process.env.LOCAL_BASE_URL || 'http://localhost:11434/v1').replace(/\/$/, '')
-  const key = local ? process.env.LOCAL_API_KEY : access?.apiKey || process.env.OPENROUTER_API_KEY
+  const key = local ? process.env.LOCAL_API_KEY : access?.apiKey
+  // there is no site-wide OpenRouter key: whoever asks brings their own (admins may use `local:` models, which need none)
+  if (!local && !key) throw new Error('ต้องตั้งคีย์ OpenRouter ของคุณเองที่หน้า "โปรไฟล์ของฉัน" ก่อนจึงจะใช้ AI ได้ (ผู้ดูแลระบบใช้โมเดล local: ได้โดยไม่ต้องมีคีย์)')
   let r: Response
   try {
     r = await fetch(local ? `${base}/chat/completions` : URL, {

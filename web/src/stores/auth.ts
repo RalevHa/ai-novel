@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia'
-import { clearAiKey } from '../aiKey'
 import { client, ok } from '../api'
 
 export type Role = 'admin' | 'writer' | 'user'
@@ -20,7 +19,6 @@ export const useAuth = defineStore('auth', {
       this.user = await ok(client.api.auth.register.post({ email, name, password, acceptTerms: true }))
     },
     async logout() {
-      clearAiKey(this.user?.id) // a key kept in the browser must not outlive the session, in case the computer is shared
       await ok(client.api.auth.logout.post())
       this.user = null
     },
