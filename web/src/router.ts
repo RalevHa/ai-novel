@@ -6,6 +6,14 @@ declare module 'vue-router' { interface RouteMeta { admin?: boolean; staff?: boo
 
 const router = createRouter({
   history: createWebHistory(),
+  // A new page starts at the top (the footer links used to leave you at the bottom); back/forward return to where you were.
+  scrollBehavior(to, _from, saved) {
+    if (/^\/story\/\d+\/read\//.test(to.path)) return false // the reader page puts you where you stopped reading, or at the top, by itself
+    if (to.hash) return { el: to.hash, top: 80 }
+    // pages fill in after fetching their data, so give them a moment before returning to a saved position
+    if (saved) return new Promise(resolve => setTimeout(() => resolve(saved), 250))
+    return { top: 0 }
+  },
   routes: [
     { path: '/', component: () => import('./pages/HomePage.vue') },
     { path: '/story/:id', component: () => import('./pages/StoryPage.vue') },
