@@ -11,6 +11,7 @@ import { buildContext, excerptSql } from './context'
 import { buildEpub } from './epub'
 import { atomFeed } from './feed'
 import { loopStart } from './guard'
+import { checkCode, sendCode } from './otp'
 import { imageNames, stripImages } from './markdown'
 import { markDone, nextBeat } from './outline'
 import { pageQuery, paging } from './paging'
@@ -59,14 +60,18 @@ const storyBody = t.Object({
 
 const authRoutes = new Elysia({ prefix: '/auth' })
   .use(auth)
-  .post('/register', async ({ body, jwt, cookie: { token }, status, request, server }) => {
+  .post('/register', async ({ body, status, request, server }) => {
     if (process.env.ALLOW_REGISTRATION === 'false') return status(403, { error: 'ปิดรับสมัครสมาชิก' })
     if (limited(`register:${server?.requestIP(request)?.address}`, 5, 60 * 60_000)) return status(429, { error: 'สมัครบ่อยเกินไป ลองใหม่ภายหลัง' })
-    if (await db.query.users.findFirst({ where: eq(users.email, body.email) })) return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' })
-    const { acceptTerms: _accepted, ...fields } = body // validated below by the schema; what we keep is when it happened
-    const [u] = await db.insert(users).values({ ...fields, passwordHash: await Bun.password.hash(body.password), termsAcceptedAt: sql`now()` }).returning(publicUser)
-    token.set({ value: await jwt.sign({ sub: String(u.id), role: u.role }), ...cookieOpts })
-    return u
+    const existing = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, emailVerifiedAt: true } })
+    if (existing?.emailVerifiedAt) return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' })
+    const row = { name: body.name, passwordHash: await Bun.password.hash(body.password), termsAcceptedAt: sql`now()` }
+    // an address nobody has confirmed can be claimed again, so a stranger who typed it cannot lock its owner out; the old unconfirmed sign-up is overwritten
+    const [u] = existing
+      ? await db.update(users).set(row).where(eq(users.id, existing.id)).returning(publicUser)
+      : await db.insert(users).values({ ...row, email: body.email }).returning(publicUser)
+    try { await sendCode(u, 'verify', u.email) } catch (e) { console.error('verify mail failed', e); return status(503, { error: 'ส่งอีเมลยืนยันไม่สำเร็จ ลองใหม่ภายหลัง' }) }
+    return { needsVerify: true as const, email: u.email } // no session until the code is entered
   }, { body: t.Object({ email: t.String({ format: 'email' }), name: t.String({ minLength: 1 }), password: t.String({ minLength: 8 }), acceptTerms: t.Literal(true, { error: 'ต้องยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัวก่อนสมัคร' }) }) })
   .post('/login', async ({ body, jwt, cookie: { token }, status, request, server }) => {
     // per IP + email: guessing one account from one address is capped, without letting a stranger lock the admin out from elsewhere
@@ -75,9 +80,42 @@ const authRoutes = new Elysia({ prefix: '/auth' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email) })
     if (!u || !(await Bun.password.verify(body.password, u.passwordHash))) return status(401, { error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
     forgive(key)
+    if (!u.emailVerifiedAt) {
+      await sendCode(u, 'verify', u.email).catch(e => console.error('verify mail failed', e)) // the web then opens the code page; "send again" is there if this failed
+      return status(403, { error: 'ยังไม่ได้ยืนยันอีเมล เราส่งรหัสไปให้แล้ว', needsVerify: true as const, email: u.email })
+    }
     token.set({ value: await jwt.sign({ sub: String(u.id), role: u.role }), ...cookieOpts })
     return { id: u.id, email: u.email, name: u.name, role: u.role }
   }, { body: t.Object({ email: t.String(), password: t.String() }) })
+  .post('/verify', async ({ body, jwt, cookie: { token }, status, request, server }) => {
+    if (limited(`verify:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+    const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, email: true, emailVerifiedAt: true } })
+    if (!u || u.emailVerifiedAt || !(await checkCode(u.id, 'verify', u.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
+    const [me] = await db.update(users).set({ emailVerifiedAt: sql`now()` }).where(eq(users.id, u.id)).returning(publicUser)
+    token.set({ value: await jwt.sign({ sub: String(me.id), role: me.role }), ...cookieOpts })
+    return me
+  }, { body: t.Object({ email: t.String(), code: t.String({ minLength: 6, maxLength: 6 }) }) })
+  // "send again" and "forgot password" always answer ok, so they cannot be used to find out which addresses have an account
+  .post('/resend', async ({ body, status, request, server }) => {
+    if (limited(`resend:${server?.requestIP(request)?.address}`, 10, 60 * 60_000)) return status(429, { error: 'ขอรหัสบ่อยเกินไป ลองใหม่ภายหลัง' })
+    const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, name: true, email: true, emailVerifiedAt: true } })
+    if (u && !u.emailVerifiedAt) await sendCode(u, 'verify', u.email).catch(e => console.error('verify mail failed', e))
+    return { ok: true }
+  }, { body: t.Object({ email: t.String() }) })
+  .post('/forgot', async ({ body, status, request, server }) => {
+    if (limited(`forgot:${server?.requestIP(request)?.address}`, 10, 60 * 60_000)) return status(429, { error: 'ขอรหัสบ่อยเกินไป ลองใหม่ภายหลัง' })
+    const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, name: true, email: true } })
+    if (u) await sendCode(u, 'reset', u.email).catch(e => console.error('reset mail failed', e))
+    return { ok: true }
+  }, { body: t.Object({ email: t.String() }) })
+  .post('/reset', async ({ body, status, request, server }) => {
+    if (limited(`reset:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+    const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, email: true } })
+    if (!u || !(await checkCode(u.id, 'reset', u.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
+    // the code came to their inbox, so this also proves the address; sign-in itself stays a separate step
+    await db.update(users).set({ passwordHash: await Bun.password.hash(body.password), emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` }).where(eq(users.id, u.id))
+    return { ok: true }
+  }, { body: t.Object({ email: t.String(), code: t.String({ minLength: 6, maxLength: 6 }), password: t.String({ minLength: 8 }) }) })
   .post('/logout', ({ cookie: { token } }) => { token.remove(); return { ok: true } })
   .get('/me', async ({ me }) => me && (await db.select(publicUser).from(users).where(eq(users.id, me.id)))[0] || null)
 
@@ -334,6 +372,23 @@ const meRoutes = new Elysia({ prefix: '/me' })
       if (!Object.keys(set).length) return status(422, { error: 'ไม่มีอะไรให้แก้ไข' })
       return (await db.update(users).set(set).where(eq(users.id, me!.id)).returning(publicUser))[0]
     }, { body: t.Object({ name: t.Optional(t.String({ maxLength: 60 })), bio: t.Optional(t.String({ maxLength: 500 })), currentPassword: t.Optional(t.String()), newPassword: t.Optional(t.String({ minLength: 8 })) }) })
+    // changing the address: a code goes to the NEW one; nothing changes until it is entered
+    .post('/email', async ({ body, me, status }) => {
+      if (limited(`email:${me!.id}`, 5, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+      const [u] = await db.select({ id: users.id, name: users.name, email: users.email, hash: users.passwordHash }).from(users).where(eq(users.id, me!.id))
+      if (!(await Bun.password.verify(body.password, u.hash))) return status(403, { error: 'รหัสผ่านไม่ถูกต้อง' })
+      if (body.email === u.email) return status(422, { error: 'นี่คืออีเมลปัจจุบันของคุณ' })
+      if (await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true } })) return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' })
+      try { if (await sendCode(u, 'change', body.email) === 'wait') return status(429, { error: 'เพิ่งส่งรหัสไปแล้ว รอ 1 นาทีก่อนขอใหม่' }) }
+      catch (e) { console.error('change mail failed', e); return status(503, { error: 'ส่งอีเมลไม่สำเร็จ ลองใหม่ภายหลัง' }) }
+      return { ok: true }
+    }, { body: t.Object({ email: t.String({ format: 'email' }), password: t.String() }) })
+    .post('/email/confirm', async ({ body, me, status }) => {
+      if (limited(`email-confirm:${me!.id}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+      if (!(await checkCode(me!.id, 'change', body.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
+      try { return (await db.update(users).set({ email: body.email, emailVerifiedAt: sql`now()` }).where(eq(users.id, me!.id)).returning(publicUser))[0] }
+      catch { return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' }) } // someone else confirmed it first
+    }, { body: t.Object({ email: t.String({ format: 'email' }), code: t.String({ minLength: 6, maxLength: 6 }) }) })
     .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt })
       .from(readingProgress).where(eq(readingProgress.userId, me!.id)).orderBy(desc(readingProgress.updatedAt)))
     .put('/progress/:id', async ({ params, body, me, status }) => {

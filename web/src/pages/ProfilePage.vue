@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { client, ok } from '../api'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
+import OtpInput from '../components/OtpInput.vue'
 import Textarea from '../components/ui/Textarea.vue'
 import { fmtDate } from '../genre'
 import { useAuth } from '../stores/auth'
@@ -29,6 +30,21 @@ async function removeKey() {
   catch (e) { toastError(e) } finally { keyBusy.value = false }
 }
 
+// changing the email: a code is mailed to the NEW address and nothing changes until it is entered
+const newEmail = ref(''), emailPw = ref(''), emailCode = ref(''), emailStep = ref<'form' | 'code'>('form'), emailBusy = ref(false)
+async function sendEmailCode() {
+  emailBusy.value = true
+  try { await ok(client.api.me.email.post({ email: newEmail.value.trim(), password: emailPw.value })); emailStep.value = 'code'; emailPw.value = ''; toast('ส่งรหัสไปที่อีเมลใหม่แล้ว') }
+  catch (e) { toastError(e) } finally { emailBusy.value = false }
+}
+async function confirmEmail() {
+  emailBusy.value = true
+  try {
+    auth.user = await ok(client.api.me.email.confirm.post({ email: newEmail.value.trim(), code: emailCode.value }))
+    newEmail.value = emailCode.value = ''; emailStep.value = 'form'; toast('เปลี่ยนอีเมลแล้ว')
+  } catch (e) { toastError(e) } finally { emailBusy.value = false }
+}
+
 async function save() {
   busy.value = true
   try {
@@ -51,6 +67,24 @@ async function save() {
       <Input v-model="next" label="รหัสผ่านใหม่" type="password" autocomplete="new-password" :minlength="8" hint="อย่างน้อย 8 ตัวอักษร เว้นว่างไว้ถ้าไม่เปลี่ยน" />
       <Button type="submit" size="lg" class="w-full" :loading="busy">บันทึก</Button>
     </form>
+
+    <section class="mt-12 border-t border-line pt-8" aria-labelledby="email-h">
+      <h2 id="email-h" class="mb-1 font-medium">เปลี่ยนอีเมล</h2>
+      <p class="muted mb-4 text-sm">เราจะส่งรหัส 6 หลักไปที่อีเมลใหม่ อีเมลจะเปลี่ยนต่อเมื่อคุณกรอกรหัสนั้นแล้วเท่านั้น</p>
+      <form v-if="emailStep === 'form'" @submit.prevent="sendEmailCode">
+        <Input v-model="newEmail" label="อีเมลใหม่" type="email" autocomplete="email" required />
+        <Input v-model="emailPw" label="รหัสผ่านปัจจุบัน" type="password" autocomplete="current-password" hint="ใส่เพื่อยืนยันว่าเป็นคุณ" required />
+        <Button type="submit" :loading="emailBusy">ส่งรหัสไปอีเมลใหม่</Button>
+      </form>
+      <form v-else @submit.prevent="confirmEmail">
+        <p class="mb-4 text-sm">เราส่งรหัสไปที่ <strong class="break-all">{{ newEmail }}</strong> แล้ว</p>
+        <OtpInput v-model="emailCode" />
+        <div class="flex gap-2">
+          <Button type="submit" :loading="emailBusy" :disabled="emailCode.length !== 6">ยืนยันอีเมลใหม่</Button>
+          <Button variant="ghost" @click="emailStep = 'form'; emailCode = ''">ยกเลิก</Button>
+        </div>
+      </form>
+    </section>
 
     <section v-if="auth.canWrite && aiKey" class="mt-12 border-t border-line pt-8" aria-labelledby="aikey-h">
       <h2 id="aikey-h" class="mb-1 font-medium">คีย์ AI ของฉัน (OpenRouter)</h2>

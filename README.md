@@ -56,6 +56,7 @@ web/      Vue 3 + Vite + Tailwind CSS           พอร์ต 5173 (proxy /api
 | `UPLOAD_DIR` | ที่เก็บรูปที่อัปโหลด เว้นว่าง = `server/uploads` |
 | `NODE_ENV` | ตั้งเป็น `production` ตอน deploy: cookie เป็น `secure`, CORS ปิด (same-origin) และ server ไม่ยอมเริ่มถ้า `JWT_SECRET` สั้นกว่า 32 ตัวอักษร / ยังเป็น `change-me` หรือ `ADMIN_PASSWORD` ยังเป็นค่าตัวอย่าง |
 | `CORS_ORIGIN` | origin ของหน้าเว็บ (คั่นด้วย `,`) ใช้เฉพาะเมื่อหน้าเว็บกับ API อยู่คนละโดเมน |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | อีเมลส่งรหัส 6 หลัก (ยืนยันตอนสมัคร / ลืมรหัสผ่าน / เปลี่ยนอีเมล) **จำเป็นเมื่อ `NODE_ENV=production`** (ไม่ตั้งแล้ว server ไม่เริ่ม) ตอน dev ไม่ตั้งได้ รหัสจะพิมพ์ในคอนโซลของ server แทน |
 | `ALLOW_REGISTRATION` | `false` = ปิดรับสมัครสมาชิก (ค่าเริ่มต้นเปิด) |
 | `CHECK_MODEL` | โมเดลที่ใช้ตรวจความต่อเนื่อง เว้นว่าง = ใช้โมเดลของเรื่อง (ใช้โมเดลถูกๆ ได้) |
 | `SUMMARY_MODEL` | โมเดลที่ใช้สรุปตอน เว้นว่าง = ใช้โมเดลของเรื่อง (ใช้โมเดลถูกหรือโมเดลในเครื่องได้) |

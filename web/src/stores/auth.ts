@@ -15,8 +15,12 @@ export const useAuth = defineStore('auth', {
     async login(email: string, password: string) {
       this.user = await ok(client.api.auth.login.post({ email, password }))
     },
+    /** Creates the account and mails a code; there is no session until verify() succeeds. */
     async register(email: string, name: string, password: string) {
-      this.user = await ok(client.api.auth.register.post({ email, name, password, acceptTerms: true }))
+      await ok(client.api.auth.register.post({ email, name, password, acceptTerms: true }))
+    },
+    async verify(email: string, code: string) {
+      this.user = await ok(client.api.auth.verify.post({ email, code }))
     },
     async logout() {
       await ok(client.api.auth.logout.post())
