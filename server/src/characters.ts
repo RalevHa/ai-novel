@@ -1,3 +1,4 @@
+import { jsonrepair } from 'jsonrepair'
 import { loadCast, loadRecap } from './context'
 import type { AiCtx } from './ai'
 import { chat, DEFAULT_MODEL } from './openrouter'
@@ -31,7 +32,8 @@ export async function suggestCharacters(story: typeof stories.$inferSelect, ai?:
   // models sometimes wrap the array in prose or a code fence; take the outermost [...]
   const raw = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)
   let list: unknown
-  try { list = JSON.parse(raw) } catch { console.error('[suggestCharacters] unparsable model output:', JSON.stringify(text)); throw new Error('โมเดลตอบไม่อยู่ในรูปแบบที่อ่านได้ ลองกดอีกครั้ง') }
+  // jsonrepair fixes the usual slips (a closing ] where } belongs, trailing commas, unescaped quotes); valid JSON passes through unchanged
+  try { list = JSON.parse(jsonrepair(raw)) } catch { console.error('[suggestCharacters] unparsable model output:', JSON.stringify(text)); throw new Error('โมเดลตอบไม่อยู่ในรูปแบบที่อ่านได้ ลองกดอีกครั้ง') }
   if (!Array.isArray(list)) throw new Error('โมเดลตอบไม่อยู่ในรูปแบบที่อ่านได้ ลองกดอีกครั้ง')
 
   const have = new Set(cast.map(c => c.name.trim().toLowerCase()))
