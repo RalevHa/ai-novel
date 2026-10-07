@@ -72,7 +72,7 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
   <div v-else-if="!rows.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
     <p class="font-serif text-lg font-bold">ยังไม่ได้ติดตามเรื่องไหน</p>
     <p class="muted mt-1 text-sm">กด "ติดตาม" ที่หน้าเรื่อง แล้วเรื่องนั้นจะมารวมอยู่ที่นี่</p>
-    <Button to="/" class="mt-5">ไปเลือกนิยาย</Button>
+    <Button to="/story" class="mt-5">ไปเลือกนิยาย</Button>
   </div>
 
   <template v-else>

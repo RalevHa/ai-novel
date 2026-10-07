@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Search, X } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
-import RatingLine from '../components/RatingLine.vue'
+import StoryCard from '../components/StoryCard.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { fmtDate, parseDb } from '../genre'
@@ -53,7 +53,7 @@ onMounted(async () => {
 
 <template>
   <header class="mb-8">
-    <h1 class="font-serif text-[clamp(28px,4.5vw,44px)] font-bold leading-tight">นิยายที่ AI แต่งไว้อ่านยามว่าง</h1>
+    <h1 class="font-serif text-[clamp(28px,4.5vw,44px)] font-bold leading-tight">นิยายทั้งหมด</h1>
     <p v-if="stories.length" class="muted mt-2">{{ stories.length }} เรื่อง<template v-if="latest"> · อัปเดตล่าสุด {{ fmtDate(latest) }}</template></p>
   </header>
 
@@ -100,15 +100,6 @@ onMounted(async () => {
   </div>
 
   <div v-else class="shelf">
-    <router-link v-for="s in shown" :key="s.id" :to="`/story/${s.id}`" class="book">
-      <div class="relative">
-        <BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" />
-        <span v-if="badge(s)" class="absolute left-2 top-2 rounded-full bg-surface/95 px-2 py-0.5 text-[11px] font-medium text-fg shadow">{{ badge(s) }}</span>
-      </div>
-      <div class="line-clamp-2 mt-3 min-h-[2.75em] text-balance font-serif font-bold leading-snug">{{ s.title }}</div>
-      <div class="muted mt-1 text-xs">{{ s.chapterCount }} ตอน<template v-if="s.mood"> · {{ s.mood }}</template></div>
-      <div class="muted truncate text-xs">โดย {{ s.authorName }}</div>
-      <RatingLine :rating="s.rating" :count="s.ratingCount" />
-    </router-link>
+    <StoryCard v-for="s in shown" :key="s.id" :story="s" :badge="badge(s)" />
   </div>
 </template>

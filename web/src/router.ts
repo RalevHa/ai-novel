@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, START_LOCATION } from 'vue-router'
 import { setTitle } from './title'
 import { useAuth } from './stores/auth'
 
@@ -15,7 +15,8 @@ const router = createRouter({
     return { top: 0 }
   },
   routes: [
-    { path: '/', component: () => import('./pages/HomePage.vue') },
+    { path: '/', component: () => import('./pages/LandingPage.vue') },
+    { path: '/story', component: () => import('./pages/StoryListPage.vue'), meta: { title: 'นิยายทั้งหมด' } },
     { path: '/story/:id', component: () => import('./pages/StoryPage.vue') },
     { path: '/story/:id/read/:no', component: () => import('./pages/ReadPage.vue') },
     { path: '/guide', component: () => import('./pages/InfoPage.vue'), props: { slug: 'guide' }, meta: { title: 'คู่มือการใช้งาน' } },
@@ -38,11 +39,13 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async to => {
+router.beforeEach(async (to, from) => {
   const auth = useAuth()
   if (!auth.ready) await auth.load()
   if ((to.meta.user && !auth.user) || (to.meta.staff && !auth.canWrite) || (to.meta.admin && !auth.isAdmin)) return { path: '/login', query: { next: to.fullPath } }
-  if (auth.user && (to.path === '/login' || to.path === '/register')) return '/'
+  // someone who is signed in and just opened the site goes straight to the novels; clicking the logo later still shows the landing page
+  if (auth.user && to.path === '/' && from === START_LOCATION) return '/story'
+  if (auth.user && (to.path === '/login' || to.path === '/register')) return '/story'
 })
 
 // pages that know their own name (story, chapter) set it again once their data has loaded

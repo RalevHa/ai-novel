@@ -13,7 +13,7 @@ async function submit() {
   busy.value = true; error.value = ''
   try {
     await auth.login(email.value, password.value)
-    router.push(typeof route.query.next === 'string' ? route.query.next : '/')
+    router.push(typeof route.query.next === 'string' ? route.query.next : '/story')
   } catch (e) { error.value = (e as Error).message } finally { busy.value = false }
 }
 </script>
