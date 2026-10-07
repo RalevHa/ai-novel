@@ -1,0 +1,41 @@
+<script setup lang="ts">
+import { ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { fmtDateTime } from '../genre'
+import { useAuth } from '../stores/auth'
+import Button from './ui/Button.vue'
+
+export type CommentView = { id: number; body: string; createdAt: string | Date; userId: number; userName: string; isAuthor: boolean; canDelete: boolean; score: number; myVote: number | null }
+
+defineProps<{ c: CommentView; confirming: boolean }>()
+defineEmits<{ vote: [value: -1 | 0 | 1]; reply: []; askDelete: []; cancelDelete: []; remove: [] }>()
+const auth = useAuth()
+const btn = (on: boolean) => ['grid size-11 place-items-center rounded-lg hover:bg-fg/5 disabled:opacity-40 sm:size-8', on && 'text-primary']
+</script>
+
+<template>
+  <div class="flex gap-2">
+    <div class="flex w-9 shrink-0 flex-col items-center text-sm">
+      <button type="button" :class="btn(c.myVote === 1)" :disabled="c.userId === auth.user?.id" :aria-pressed="c.myVote === 1" aria-label="โหวตขึ้น" @click="$emit('vote', c.myVote === 1 ? 0 : 1)"><ChevronUp class="size-5" aria-hidden="true" /></button>
+      <span class="tabular-nums" :aria-label="`คะแนน ${c.score}`">{{ c.score }}</span>
+      <button type="button" :class="btn(c.myVote === -1)" :disabled="c.userId === auth.user?.id" :aria-pressed="c.myVote === -1" aria-label="โหวตลง" @click="$emit('vote', c.myVote === -1 ? 0 : -1)"><ChevronDown class="size-5" aria-hidden="true" /></button>
+    </div>
+    <div class="min-w-0 flex-1">
+      <div class="flex flex-wrap items-center gap-x-2 text-sm">
+        <span class="font-medium">{{ c.userName }}</span>
+        <span v-if="c.isAuthor" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">ผู้แต่ง</span>
+        <span class="muted text-xs">{{ fmtDateTime(c.createdAt) }}</span>
+      </div>
+      <p class="mt-1 whitespace-pre-wrap break-words leading-relaxed">{{ c.body }}</p>
+      <div class="mt-1 flex flex-wrap items-center gap-1">
+        <Button variant="ghost" size="sm" @click="$emit('reply')">ตอบกลับ</Button>
+        <template v-if="c.canDelete">
+          <Button v-if="!confirming" variant="ghost" size="sm" @click="$emit('askDelete')">ลบ</Button>
+          <template v-else>
+            <Button variant="danger" size="sm" @click="$emit('remove')">ยืนยันลบ</Button>
+            <Button variant="ghost" size="sm" @click="$emit('cancelDelete')">ยกเลิก</Button>
+          </template>
+        </template>
+      </div>
+    </div>
+  </div>
+</template>

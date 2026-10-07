@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { setTitle } from './title'
 import { useAuth } from './stores/auth'
 
-declare module 'vue-router' { interface RouteMeta { admin?: boolean; title?: string } }
+declare module 'vue-router' { interface RouteMeta { admin?: boolean; staff?: boolean; user?: boolean; title?: string } }
 
 const router = createRouter({
   history: createWebHistory(),
@@ -12,9 +12,12 @@ const router = createRouter({
     { path: '/story/:id/read/:no', component: () => import('./pages/ReadPage.vue') },
     { path: '/login', component: () => import('./pages/LoginPage.vue'), meta: { title: 'เข้าสู่ระบบ' } },
     { path: '/register', component: () => import('./pages/RegisterPage.vue'), meta: { title: 'สมัครสมาชิก' } },
-    { path: '/admin/stories', component: () => import('./pages/AdminStories.vue'), meta: { admin: true, title: 'จัดการนิยาย' } },
+    { path: '/author/:id', component: () => import('./pages/AuthorPage.vue') },
+    { path: '/following', component: () => import('./pages/FollowingPage.vue'), meta: { user: true, title: 'เรื่องที่ติดตาม' } },
+    { path: '/profile', component: () => import('./pages/ProfilePage.vue'), meta: { user: true, title: 'โปรไฟล์ของฉัน' } },
+    { path: '/admin/stories', component: () => import('./pages/AdminStories.vue'), meta: { staff: true, title: 'จัดการนิยาย' } },
     { path: '/admin/users', component: () => import('./pages/AdminUsers.vue'), meta: { admin: true, title: 'จัดการผู้ใช้' } },
-    { path: '/admin/stories/:id', component: () => import('./pages/AdminStory.vue'), meta: { admin: true } },
+    { path: '/admin/stories/:id', component: () => import('./pages/AdminStory.vue'), meta: { staff: true } },
     { path: '/:pathMatch(.*)*', component: () => import('./pages/NotFoundPage.vue'), meta: { title: 'ไม่พบหน้านี้' } },
   ],
 })
@@ -22,7 +25,7 @@ const router = createRouter({
 router.beforeEach(async to => {
   const auth = useAuth()
   if (!auth.ready) await auth.load()
-  if (to.meta.admin && !auth.isAdmin) return { path: '/login', query: { next: to.fullPath } }
+  if ((to.meta.user && !auth.user) || (to.meta.staff && !auth.canWrite) || (to.meta.admin && !auth.isAdmin)) return { path: '/login', query: { next: to.fullPath } }
   if (auth.user && (to.path === '/login' || to.path === '/register')) return '/'
 })
 

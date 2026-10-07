@@ -1,11 +1,13 @@
-import { boolean, doublePrecision, index, integer, pgTable, primaryKey, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { type AnyPgColumn, boolean, check, doublePrecision, index, integer, pgTable, primaryKey, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
-  role: text('role', { enum: ['admin', 'user'] }).notNull().default('user'),
+  role: text('role', { enum: ['admin', 'writer', 'user'] }).notNull().default('user'), // writer: can write stories of their own; only an admin can grant it
+  bio: text('bio').notNull().default(''), // shown on the author page
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
@@ -87,3 +89,42 @@ export const bookmarks = pgTable('bookmarks', {
   storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.userId, t.storyId] })])
+
+// who changed what (role grants for now); actorId is null if that account is ever removed
+export const auditLog = pgTable('audit_log', {
+  id: serial('id').primaryKey(),
+  actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  action: text('action').notNull(),
+  targetId: integer('target_id').references(() => users.id, { onDelete: 'set null' }),
+  detail: text('detail').notNull().default(''),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
+
+// comments on one chapter; replies go one level deep (a reply to a reply is stored under the top-level comment)
+export const comments = pgTable('comments', {
+  id: serial('id').primaryKey(),
+  storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  parentId: integer('parent_id').references((): AnyPgColumn => comments.id, { onDelete: 'cascade' }), // null = top-level
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [index('comments_chapter_idx').on(t.chapterId, t.id), index('comments_parent_idx').on(t.parentId)])
+
+// one vote per reader per comment: +1 up, -1 down (removing a vote deletes the row)
+export const commentVotes = pgTable('comment_votes', {
+  commentId: integer('comment_id').notNull().references(() => comments.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  value: integer('value').notNull(),
+}, t => [primaryKey({ columns: [t.commentId, t.userId] }), check('comment_votes_value', sql`${t.value} in (-1, 1)`)])
+
+// community reviews of a whole story: one per reader (they can edit it), a 1-5 star rating plus optional text
+export const reviews = pgTable('reviews', {
+  id: serial('id').primaryKey(),
+  storyId: integer('story_id').notNull().references(() => stories.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  rating: integer('rating').notNull(),
+  body: text('body').notNull().default(''),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, t => [unique('reviews_story_user_key').on(t.storyId, t.userId), check('reviews_rating_range', sql`${t.rating} between 1 and 5`)])

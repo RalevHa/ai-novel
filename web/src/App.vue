@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ExternalLink, LibraryBig, LogOut, Moon, Settings, Sun, Users } from 'lucide-vue-next'
+import { BookmarkCheck, ExternalLink, LibraryBig, LogOut, Moon, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
 import Toaster from './components/ui/Toaster.vue'
@@ -16,13 +16,15 @@ async function logout() {
   router.push('/')
 }
 const menu = computed<MenuEntry[]>(() => [
-  ...(auth.isAdmin ? [{ label: 'จัดการนิยาย', icon: Settings, to: '/admin/stories' }] : []),
+  ...(auth.canWrite ? [{ label: 'จัดการนิยาย', icon: Settings, to: '/admin/stories' }] : []),
+  { label: 'เรื่องที่ติดตาม', icon: BookmarkCheck, to: '/following' },
+  { label: 'โปรไฟล์ของฉัน', icon: UserRound, to: '/profile' },
   { label: 'ออกจากระบบ', icon: LogOut, action: logout },
 ])
-const nav = [
+const nav = computed(() => [
   { to: '/admin/stories', label: 'นิยาย', icon: LibraryBig },
-  { to: '/admin/users', label: 'ผู้ใช้', icon: Users },
-]
+  ...(auth.isAdmin ? [{ to: '/admin/users', label: 'ผู้ใช้', icon: Users }] : []), // writers manage stories only
+])
 const link = 'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-fg/5'
 // a plain #main anchor would make the router navigate; focus the landmark instead
 const skipToMain = () => { const m = document.getElementById('main'); m?.focus(); m?.scrollIntoView() }
@@ -52,7 +54,7 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
 
     <main id="main" tabindex="-1" class="mx-auto max-w-[1000px] px-4 pb-24 pt-6 outline-none md:px-8 md:pb-10 md:pt-8"><router-view /></main>
 
-    <nav class="fixed inset-x-0 bottom-0 z-30 grid h-16 grid-cols-3 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="เมนูจัดการ">
+    <nav class="fixed inset-x-0 bottom-0 z-30 grid h-16 auto-cols-fr grid-flow-col border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="เมนูจัดการ">
       <router-link v-for="n in nav" :key="n.to" :to="n.to" class="flex flex-col items-center justify-center gap-1 text-xs text-fg/75" active-class="!text-primary font-medium"><component :is="n.icon" class="size-5" />{{ n.label }}</router-link>
       <router-link to="/" class="flex flex-col items-center justify-center gap-1 text-xs text-fg/75"><ExternalLink class="size-5" />หน้าอ่าน</router-link>
     </nav>

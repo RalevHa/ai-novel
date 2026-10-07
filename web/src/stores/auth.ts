@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { client, ok } from '../api'
 
-export type User = { id: number; email: string; name: string; role: 'admin' | 'user' }
+export type Role = 'admin' | 'writer' | 'user'
+export type User = { id: number; email: string; name: string; role: Role; bio?: string }
 
 export const useAuth = defineStore('auth', {
   state: () => ({ user: null as User | null, ready: false }),
-  getters: { isAdmin: s => s.user?.role === 'admin' },
+  getters: { isAdmin: s => s.user?.role === 'admin', canWrite: s => s.user?.role === 'admin' || s.user?.role === 'writer' },
   actions: {
     async load() {
       this.user = (await client.api.auth.me.get().catch(() => null))?.data ?? null

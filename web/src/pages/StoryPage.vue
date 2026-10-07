@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDownUp, BookOpen, BookmarkCheck, BookmarkPlus, Check, Download, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
+import ReviewSection from '../components/ReviewSection.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Modal from '../components/ui/Modal.vue'
@@ -86,6 +87,7 @@ onMounted(async () => {
     <div>
       <div class="eyebrow mb-2">{{ [story.genre, story.mood].filter(Boolean).join(' · ') || 'นิยาย' }}</div>
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">{{ story.title }}</h1>
+      <p class="muted mt-1 text-sm">โดย <router-link :to="`/author/${story.authorId}`" class="-my-3 inline-block py-3 text-primary underline underline-offset-2">{{ story.authorName }}</router-link></p>
       <p class="mb-6 mt-4 max-w-[62ch] whitespace-pre-wrap leading-[1.85] text-fg/85">{{ story.synopsis }}</p>
 
       <div ref="cta" :class="[readCount ? 'mb-5' : 'mb-10', 'flex flex-wrap gap-3']">
@@ -163,6 +165,7 @@ onMounted(async () => {
         <li v-if="!list.length" class="muted py-4">ยังไม่มีตอนที่เผยแพร่</li>
       </ol>
       <Pager v-show="tab === 'toc'" v-model="tocPage" :size="SIZE" :total="all.length" />
+      <ReviewSection :story-id="Number(id)" :author-id="story.authorId" />
     </div>
   </div>
 

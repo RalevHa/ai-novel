@@ -2,9 +2,9 @@ import { jwt } from '@elysiajs/jwt'
 import { eq } from 'drizzle-orm'
 import { Elysia, status } from 'elysia'
 import { db } from './db'
-import { users } from './schema'
+import { chapters, characters, stories, users } from './schema'
 
-export type Role = 'admin' | 'user'
+export type Role = 'admin' | 'writer' | 'user'
 
 export const prod = process.env.NODE_ENV === 'production'
 
@@ -27,6 +27,30 @@ export const auth = new Elysia({ name: 'auth' })
 
 // status() (not set.status) keeps the error out of the success response type that Eden infers
 export const adminOnly = { beforeHandle: ({ me }: { me: { role: Role } | null }) => { if (me?.role !== 'admin') return status(me ? 403 : 401, { error: 'ต้องเป็นผู้ดูแลระบบเท่านั้น' }) } }
+
+const OWNED = /^\/api\/admin\/(stories|chapters|characters)\/(\d+)/
+
+/** A writer may only touch stories they created; admins pass. The story is found from the id in the URL (story, chapter or character). */
+async function ownStory({ me, request }: { me: { id: number; role: Role } | null; request: Request }) {
+  if (me?.role !== 'writer') return
+  const m = OWNED.exec(new URL(request.url).pathname)
+  if (!m) return
+  const [kind, n] = [m[1], Number(m[2])]
+  const [row] = kind === 'stories'
+    ? await db.select({ authorId: stories.authorId }).from(stories).where(eq(stories.id, n))
+    : kind === 'chapters'
+      ? await db.select({ authorId: stories.authorId }).from(chapters).innerJoin(stories, eq(stories.id, chapters.storyId)).where(eq(chapters.id, n))
+      : await db.select({ authorId: stories.authorId }).from(characters).innerJoin(stories, eq(stories.id, characters.storyId)).where(eq(characters.id, n))
+  if (row && row.authorId !== me.id) return status(403, { error: 'นี่ไม่ใช่เรื่องของคุณ' }) // a missing row falls through to the handler's own 404
+}
+
+/** Admin or writer; writers are then limited to their own stories. */
+export const staffOnly = {
+  beforeHandle: [
+    ({ me }: { me: { role: Role } | null }) => { if (me?.role !== 'admin' && me?.role !== 'writer') return status(me ? 403 : 401, { error: 'ต้องเป็นนักเขียนหรือผู้ดูแลระบบเท่านั้น' }) },
+    ownStory,
+  ],
+}
 
 export const userOnly = { beforeHandle: ({ me }: { me: { role: Role } | null }) => { if (!me) return status(401, { error: 'ต้องเข้าสู่ระบบก่อน' }) } }
 
