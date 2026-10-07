@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { otpMail } from '../src/mail'
 
 test('otpMail: the code, expiry and a subject per purpose are in both the HTML and the text body', () => {
-  for (const p of ['verify', 'reset', 'change'] as const) {
+  for (const p of ['verify', 'reset', 'change', 'delete'] as const) {
     const m = otpMail(p, '048213')
     expect(m.html).toContain('048213') // a leading zero must survive
     expect(m.text).toContain('048213')

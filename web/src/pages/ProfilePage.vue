@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { client, ok } from '../api'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
@@ -9,7 +10,7 @@ import { fmtDate } from '../genre'
 import { useAuth } from '../stores/auth'
 import { toast, toastError } from '../toast'
 
-const auth = useAuth()
+const auth = useAuth(), router = useRouter()
 const ROLE = { admin: 'ผู้ดูแลระบบ', writer: 'นักเขียน', user: 'ผู้อ่าน' }
 const name = ref(auth.user!.name), bio = ref(auth.user!.bio ?? '')
 const current = ref(''), next = ref('')
@@ -43,6 +44,19 @@ async function confirmEmail() {
     auth.user = await ok(client.api.me.email.confirm.post({ email: newEmail.value.trim(), code: emailCode.value }))
     newEmail.value = emailCode.value = ''; emailStep.value = 'form'; toast('เปลี่ยนอีเมลแล้ว')
   } catch (e) { toastError(e) } finally { emailBusy.value = false }
+}
+
+// deleting the account: password first (the server mails a code), then the code; the server refuses while the person still owns stories
+const delStep = ref<'closed' | 'password' | 'code'>('closed'), delPw = ref(''), delCode = ref(''), delBusy = ref(false)
+async function sendDeleteCode() {
+  delBusy.value = true
+  try { await ok(client.api.me.delete.post({ password: delPw.value })); delStep.value = 'code'; delPw.value = ''; toast('ส่งรหัสไปที่อีเมลของคุณแล้ว') }
+  catch (e) { toastError(e) } finally { delBusy.value = false }
+}
+async function confirmDelete() {
+  delBusy.value = true
+  try { await ok(client.api.me.delete.confirm.post({ code: delCode.value })); auth.user = null; toast('ลบบัญชีแล้ว'); router.push('/') }
+  catch (e) { toastError(e) } finally { delBusy.value = false }
 }
 
 async function save() {
@@ -82,6 +96,27 @@ async function save() {
         <div class="flex gap-2">
           <Button type="submit" :loading="emailBusy" :disabled="emailCode.length !== 6">ยืนยันอีเมลใหม่</Button>
           <Button variant="ghost" @click="emailStep = 'form'; emailCode = ''">ยกเลิก</Button>
+        </div>
+      </form>
+    </section>
+
+    <section v-if="auth.user!.role !== 'admin'" class="mt-12 border-t border-line pt-8" aria-labelledby="del-h">
+      <h2 id="del-h" class="mb-1 font-medium text-danger">ลบบัญชี</h2>
+      <p class="muted mb-4 text-sm">ลบบัญชีนี้ถาวร ความคิดเห็น รีวิว โหวต เรื่องที่ติดตาม และการแจ้งเตือนของคุณจะหายไปด้วย กู้คืนไม่ได้ ถ้าคุณเป็นนักเขียนที่มีเรื่องอยู่ ต้องลบเรื่องเหล่านั้นก่อน</p>
+      <Button v-if="delStep === 'closed'" variant="outline" @click="delStep = 'password'">ลบบัญชีของฉัน</Button>
+      <form v-else-if="delStep === 'password'" @submit.prevent="sendDeleteCode">
+        <Input v-model="delPw" label="รหัสผ่านปัจจุบัน" type="password" autocomplete="current-password" hint="เราจะส่งรหัส 6 หลักไปที่อีเมลของบัญชีเพื่อยืนยันอีกครั้ง" required />
+        <div class="flex gap-2">
+          <Button type="submit" variant="danger" :loading="delBusy">ส่งรหัสยืนยัน</Button>
+          <Button variant="ghost" @click="delStep = 'closed'; delPw = ''">ยกเลิก</Button>
+        </div>
+      </form>
+      <form v-else @submit.prevent="confirmDelete">
+        <p class="mb-4 text-sm">เราส่งรหัสไปที่ <strong class="break-all">{{ auth.user!.email }}</strong> แล้ว กรอกรหัสเพื่อลบบัญชีถาวร</p>
+        <OtpInput v-model="delCode" />
+        <div class="flex gap-2">
+          <Button type="submit" variant="danger" :loading="delBusy" :disabled="delCode.length !== 6">ลบบัญชีถาวร</Button>
+          <Button variant="ghost" @click="delStep = 'closed'; delCode = ''">ยกเลิก</Button>
         </div>
       </form>
     </section>
