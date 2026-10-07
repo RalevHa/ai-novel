@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDownUp, BookOpen, BookmarkCheck, BookmarkPlus, Check, Download, Rss } from 'lucide-vue-next'
+import { ArrowDownUp, BookOpen, BookmarkCheck, BookmarkPlus, Check, Download, MessageSquare, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import ReviewSection from '../components/ReviewSection.vue'
@@ -158,7 +158,10 @@ onMounted(async () => {
               <template v-if="readSet.has(c.no)"><Check class="ml-1.5 inline size-4 align-[-2px] text-primary" aria-hidden="true" /><span class="sr-only"> (อ่านแล้ว)</span></template>
               <span class="muted mt-0.5 block text-xs md:hidden">{{ fmtDate(c.createdAt) }}</span>
             </span>
-            <span v-if="c.no === last" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">อ่านล่าสุด</span><span v-else />
+            <span class="flex items-center gap-2">
+              <span v-if="c.commentCount" class="muted inline-flex items-center gap-1 text-xs" :aria-label="`${c.commentCount} ความคิดเห็น`"><MessageSquare class="size-3.5" aria-hidden="true" />{{ c.commentCount }}</span>
+              <span v-if="c.no === last" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">อ่านล่าสุด</span>
+            </span>
             <span class="muted hidden text-xs md:inline">{{ fmtDate(c.createdAt) }}</span>
           </router-link>
         </li>

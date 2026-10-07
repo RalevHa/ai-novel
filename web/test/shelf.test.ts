@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isRecent, shelf, type ShelfStory } from '../src/shelf'
+import { isRecent, ratingScore, shelf, type ShelfStory } from '../src/shelf'
 
 const s = (id: number, title: string, o: Partial<ShelfStory> = {}): ShelfStory => ({ id, title, chapterCount: 1, createdAt: `2026-09-0${id} 10:00:00`, updatedAt: `2026-09-0${id} 10:00:00`, ...o })
 const all = [
@@ -13,6 +13,17 @@ test('shelf: sorts by recent update (falling back to creation), newest, or chapt
   expect(ids(shelf(all, { q: '', genre: null, sort: 'updated' }))).toEqual([1, 3, 2]) // 1 updated 9th; 3 has no chapters yet: created 3rd; 2 updated 2nd
   expect(ids(shelf(all, { q: '', genre: null, sort: 'newest' }))).toEqual([3, 2, 1])
   expect(ids(shelf(all, { q: '', genre: null, sort: 'chapters' }))).toEqual([1, 3, 2])
+})
+
+test('shelf: top rated puts well-reviewed stories first, a lone 5-star review does not win, unrated last', () => {
+  const rated = [
+    s(1, 'a', { rating: 5, ratingCount: 1 }),
+    s(2, 'b', { rating: 4.6, ratingCount: 30 }),
+    s(3, 'c'), // never reviewed
+    s(4, 'd', { rating: 4.6, ratingCount: 5, updatedAt: '2026-09-09 10:00:00' }),
+  ]
+  expect(ids(shelf(rated, { q: '', genre: null, sort: 'rating' }))).toEqual([2, 4, 1, 3])
+  expect(ratingScore({ rating: null, ratingCount: 0 })).toBe(0)
 })
 
 test('shelf: search is case-insensitive over title, genre, mood and synopsis; blank query matches all', () => {
