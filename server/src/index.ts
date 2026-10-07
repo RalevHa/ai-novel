@@ -3,7 +3,7 @@ import { and, asc, desc, eq, ilike, inArray, isNull, max, or, sql } from 'drizzl
 import { alias } from 'drizzle-orm/pg-core'
 import { join } from 'node:path'
 import { Elysia, status, t } from 'elysia'
-import { budget, monthSpent, overBudget } from './budget'
+import { aiGate, ownKey } from './ai'
 import { adminOnly, assertConfig, auth, prod, seedAdmin, staffOnly, userOnly } from './auth'
 import { addChapter, checkChapter, summarizeChapter } from './chapters'
 import { suggestCharacters } from './characters'
@@ -18,8 +18,9 @@ import { forgive, limited } from './ratelimit'
 import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
-import { streamChat, type Usage } from './openrouter'
-import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviews, readingProgress, stories, users } from './schema'
+import { API_BASE, streamChat, type Usage } from './openrouter'
+import { encryptSecret } from './secrets'
+import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviews, readingProgress, stories, userAiKeys, users } from './schema'
 import { releasedAtFor } from './release'
 import { siteRoutes } from './site'
 import { restore, snapshot } from './versions'
@@ -309,6 +310,13 @@ async function newChapterStories(userId: number) {
     .groupBy(stories.id, stories.title, users.notificationsSeenAt)
 }
 
+/** What the settings page may know about a user's AI access: whether they have a usable key, and its last 4 characters. Admins can also use `local:` models without one. */
+async function aiKeyState(me: { id: number; role: string }) {
+  const usable = !!(await ownKey(me.id))
+  const [row] = usable ? await db.select({ last4: userAiKeys.last4, updatedAt: userAiKeys.updatedAt }).from(userAiKeys).where(eq(userAiKeys.userId, me.id)) : []
+  return { hasKey: usable, last4: row?.last4 ?? null, updatedAt: row?.updatedAt ?? null, admin: me.role === 'admin', canUseAi: usable }
+}
+
 // Signed-in readers: where they stopped in each story, and which chapters they have finished
 const meRoutes = new Elysia({ prefix: '/me' })
   .use(auth)
@@ -358,6 +366,24 @@ const meRoutes = new Elysia({ prefix: '/me' })
         .map(c => ({ key: `c${c.storyId}`, type: 'chapter' as 'reply' | 'vote' | 'chapter', createdAt: new Date(c.at.replace(' ', 'T') + 'Z'), actor: null as string | null, storyId: c.storyId, storyTitle: c.storyTitle, no: c.firstNo, score: 0, count: c.count, unread: c.fresh, snippet: '' }))
       return [...stored.map(n => ({ ...n, type: n.type as 'reply' | 'vote' | 'chapter' })), ...chaptersDue].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 50)
     })
+    // The user's own OpenRouter key. It is only ever stored encrypted (bound to their user id) and never sent back: the page learns "set" and the last 4 characters.
+    .get('/ai-key', async ({ me }) => aiKeyState(me!))
+    .put('/ai-key', async ({ body, me, status }) => {
+      if (me!.role === 'user') return status(403, { error: 'ตั้งคีย์ AI ได้เฉพาะนักเขียนและผู้ดูแลระบบ' })
+      if (limited(`aikey:${me!.id}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+      const key = body.key.trim()
+      if (!/^\S{20,200}$/.test(key)) return status(422, { error: 'รูปแบบคีย์ไม่ถูกต้อง' })
+      // ask OpenRouter whether the key works before keeping it
+      let r: Response
+      try { r = await fetch(`${API_BASE}/auth/key`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) }) }
+      catch { return status(502, { error: 'ตรวจคีย์กับ OpenRouter ไม่ได้ในตอนนี้ ลองใหม่อีกครั้ง' }) }
+      if (r.status === 401 || r.status === 403) return status(422, { error: 'OpenRouter ไม่รับคีย์นี้ ตรวจว่าคัดลอกครบและยังไม่ถูกลบ' })
+      if (!r.ok) return status(502, { error: `OpenRouter ตอบกลับ ${r.status} ลองใหม่อีกครั้ง` })
+      const values = { ciphertext: encryptSecret(key, String(me!.id)), last4: key.slice(-4), updatedAt: new Date() }
+      await db.insert(userAiKeys).values({ userId: me!.id, ...values }).onConflictDoUpdate({ target: userAiKeys.userId, set: values })
+      return aiKeyState(me!)
+    }, { body: t.Object({ key: t.String({ maxLength: 300 }) }) })
+    .delete('/ai-key', async ({ me }) => { await db.delete(userAiKeys).where(eq(userAiKeys.userId, me!.id)); return aiKeyState(me!) })
     .get('/notifications/count', async ({ me }) => {
       // polled every minute by the bell; a user follows few stories, so the chapter query stays small
       const stored = await db.$count(notifications, and(eq(notifications.userId, me!.id), isNull(notifications.readAt)))
@@ -405,6 +431,7 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
         const [before] = await tx.select({ role: users.role }).from(users).where(eq(users.id, params.id))
         if (!before) return status(404, { error: 'ไม่พบข้อมูล' })
         const [u] = await tx.update(users).set(body).where(eq(users.id, params.id)).returning(publicUser)
+        if (body.role === 'user') await tx.delete(userAiKeys).where(eq(userAiKeys.userId, params.id)) // a reader has no use for a stored key
         if (before.role !== u.role) await tx.insert(auditLog).values({ actorId: me!.id, action: 'role', targetId: u.id, detail: `${before.role} → ${u.role}` })
         return u
       })
@@ -414,7 +441,6 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       return db.select({ id: auditLog.id, action: auditLog.action, detail: auditLog.detail, createdAt: auditLog.createdAt, actor: actor.name, target: target.name })
         .from(auditLog).leftJoin(actor, eq(actor.id, auditLog.actorId)).leftJoin(target, eq(target.id, auditLog.targetId)).orderBy(desc(auditLog.id)).limit(50)
     })
-    .get('/usage', async () => ({ spent: await monthSpent(), budget: budget() }))
     // open reports, one entry per reported comment (several readers may flag the same one), most recently reported first
     .get('/reports', async () => {
       const reporter = alias(users, 'reporter'), author = alias(users, 'author')
@@ -502,10 +528,12 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       return (await db.insert(characters).values({ ...body, storyId: params.id }).returning())[0]
     }, { ...id, body: characterBody })
     // proposes characters found in the story; nothing is saved until the admin adds them
-    .post('/stories/:id/characters/suggest', async ({ params, status }) => {
+    .post('/stories/:id/characters/suggest', async ({ params, me, status }) => {
       const story = await db.query.stories.findFirst({ where: eq(stories.id, params.id) })
       if (!story) return status(404, { error: 'ไม่พบข้อมูล' })
-      try { return { suggestions: await suggestCharacters(story) } }
+      const gate = await aiGate(me!)
+      if ('stop' in gate) return status(402, { error: gate.stop })
+      try { return { suggestions: await suggestCharacters(story, gate.ctx) } }
       catch (e) { return status(502, { error: (e as Error).message }) }
     }, id)
     .patch('/characters/:id', async ({ params, body }) => (await db.update(characters).set(body).where(eq(characters.id, params.id)).returning())[0], { ...id, body: t.Partial(characterBody) })
@@ -561,12 +589,13 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       return { updated: rows.length }
     }, { ...id, body: t.Object({ ids: t.Array(t.Integer(), { minItems: 1 }), published: t.Boolean() }) })
     // Streams a fresh version of an existing chapter written by `model`. Nothing is saved: the admin previews it and applies it in the editor.
-    .post('/chapters/:id/rewrite', async function* ({ params, body, set }) {
+    .post('/chapters/:id/rewrite', async function* ({ params, body, set, me }) {
       const c = await db.query.chapters.findFirst({ where: eq(chapters.id, params.id) })
       const story = c && await db.query.stories.findFirst({ where: eq(stories.id, c.storyId) })
       if (!c || !story) { set.status = 404; yield 'ไม่พบตอนนี้'; return }
-      const stop = await overBudget()
-      if (stop) { set.status = 402; yield stop; return }
+      const gate = await aiGate(me!)
+      if ('stop' in gate) { set.status = 402; yield gate.stop; return }
+      const ai = gate.ctx
 
       const note = body.instruction?.trim()
       const ask = [
@@ -579,7 +608,8 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
 
       let acc = ''
       try {
-        for await (const d of streamChat(body.model?.trim() || ctx.model, ctx.messages)) {
+        const model = body.model?.trim() || ctx.model
+        for await (const d of streamChat(model, ctx.messages, u => ai.record('rewrite', model, u), ai.access)) {
           acc += d; yield d
           if (loopStart(acc) !== -1) { yield '\n\n⚠️ โมเดลเริ่มตอบวนซ้ำ จึงหยุดให้'; break }
         }
@@ -589,15 +619,17 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
         yield `${acc ? '\n\n⚠️ ' : ''}${(e as Error).message}`
       }
     }, { ...id, body: t.Object({ model: t.Optional(t.String()), instruction: t.Optional(t.String()) }) })
-    .post('/chapters/:id/summarize', async ({ params, status }) => {
-      try { return { summary: await summarizeChapter(params.id) } }
+    .post('/chapters/:id/summarize', async ({ params, me, status }) => {
+      const gate = await aiGate(me!)
+      if ('stop' in gate) return status(402, { error: gate.stop })
+      try { return { summary: await summarizeChapter(params.id, undefined, gate.ctx) } }
       catch (e) { return status(502, { error: (e as Error).message }) }
     }, id)
     // continuity report for one chapter; on demand because each run costs a model call
-    .post('/chapters/:id/check', async ({ params, status }) => {
-      const stop = await overBudget()
-      if (stop) return status(402, { error: stop })
-      try { return { report: await checkChapter(params.id) } }
+    .post('/chapters/:id/check', async ({ params, me, status }) => {
+      const gate = await aiGate(me!)
+      if ('stop' in gate) return status(402, { error: gate.stop })
+      try { return { report: await checkChapter(params.id, gate.ctx) } }
       catch (e) { return status(502, { error: (e as Error).message }) }
     }, id)
     .delete('/chapters/:id', async ({ params }) => {
@@ -612,12 +644,13 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
     }, { body: imageBody })
 
     // Streams the new chapter as plain text, saves it as an unpublished draft when finished.
-    .post('/stories/:id/generate', async function* ({ params, body, set }) {
+    .post('/stories/:id/generate', async function* ({ params, body, set, me }) {
       const story = await db.query.stories.findFirst({ where: eq(stories.id, params.id) })
       if (!story) { set.status = 404; yield 'ไม่พบเรื่องนี้'; return }
 
-      const stop = await overBudget()
-      if (stop) { set.status = 402; yield stop; return }
+      const gate = await aiGate(me!)
+      if ('stop' in gate) { set.status = 402; yield gate.stop; return }
+      const ai = gate.ctx
 
       // fromOutline: the next unwritten line of the story's outline is this chapter's instruction (ticked off once the chapter is complete)
       const beat = body.fromOutline ? nextBeat(story.outline) : undefined
@@ -630,7 +663,7 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       // so what was already generated (and paid for) is kept as a draft instead of being lost.
       let acc = '', complete = false, looped = false, usage = undefined as Usage | undefined
       try {
-        for await (const d of streamChat(model, messages, u => { usage = u })) {
+        for await (const d of streamChat(model, messages, u => { usage = u; ai.record('generate', model, u) }, ai.access)) {
           acc += d; yield d
           const at = loopStart(acc)
           if (at !== -1) {
@@ -654,7 +687,7 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
               if (cur) await db.update(stories).set({ outline: markDone(cur.outline, beat) }).where(eq(stories.id, story.id))
             }
             // recap runs in the background so the stream can close; skipped for cut-off chapters
-            if (complete) summarizeChapter(row.id, model).catch(e => console.error('summary failed', e))
+            if (complete) summarizeChapter(row.id, model, ai).catch(e => console.error('summary failed', e))
           } catch (e) { console.error('failed to save generated chapter', e) }
         }
       }

@@ -181,3 +181,24 @@ export const infoPageRevisions = pgTable('info_page_revisions', {
   editorId: integer('editor_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [index('info_page_revisions_slug_idx').on(t.slug, t.id)])
+
+// A writer's own OpenRouter key, encrypted (see secrets.ts) and bound to their user id; the only place a key is stored. Never selected into responses:
+// the UI only learns "set" and the last 4 characters.
+export const userAiKeys = pgTable('user_ai_keys', {
+  userId: integer('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  ciphertext: text('ciphertext').notNull(),
+  last4: text('last4').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+// Every call to a model and what it cost, so the monthly cap can count only what the site's own key paid for ('site') and not what writers paid with theirs ('own').
+export const aiUsage = pgTable('ai_usage', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+  source: text('source', { enum: ['site', 'own'] }).notNull(),
+  kind: text('kind').notNull(), // generate | rewrite | summary | check | suggest | earlier (spend recorded before this table existed)
+  model: text('model').notNull().default(''),
+  tokens: integer('tokens').notNull().default(0),
+  cost: doublePrecision('cost').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [index('ai_usage_source_created_idx').on(t.source, t.createdAt)])

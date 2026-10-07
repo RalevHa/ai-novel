@@ -1,4 +1,5 @@
 import { loadCast, loadRecap } from './context'
+import type { AiCtx } from './ai'
 import { chat, DEFAULT_MODEL } from './openrouter'
 import type { stories } from './schema'
 
@@ -13,18 +14,19 @@ const PROMPT = `คุณเป็นบรรณาธิการนิยา�
 export type Suggestion = { name: string; role: string; profile: string }
 
 /** Ask the model for characters it finds in the story that are not in the cast yet. Nothing is saved: the admin reviews first. */
-export async function suggestCharacters(story: typeof stories.$inferSelect): Promise<Suggestion[]> {
+export async function suggestCharacters(story: typeof stories.$inferSelect, ai?: AiCtx): Promise<Suggestion[]> {
   const [cast, recap] = await Promise.all([loadCast(story.id), loadRecap(story.id)])
   if (!story.premise.trim() && !recap.length) throw new Error('ยังไม่มีข้อมูลให้ดึงตัวละคร ใส่พล็อตตั้งต้นหรือให้ AI เขียนตอนก่อน')
 
-  const text = await chat(story.model || DEFAULT_MODEL, [
+  const model = story.model || DEFAULT_MODEL
+  const text = await chat(model, [
     { role: 'system', content: PROMPT },
     { role: 'user', content: [
       story.premise && `พล็อต/ตัวละครตั้งต้น:\n${story.premise}`,
       recap.length && `เรื่องย่อแต่ละตอน:\n${recap.map(c => `ตอนที่ ${c.no}: ${c.text}`).join('\n')}`,
       `ตัวละครที่มีในรายการแล้ว (ห้ามเสนอซ้ำ): ${cast.map(c => c.name).join(', ') || '(ไม่มี)'}`,
     ].filter(Boolean).join('\n\n') },
-  ])
+  ], u => ai?.record('suggest', model, u), ai?.access)
 
   // models sometimes wrap the array in prose or a code fence; take the outermost [...]
   const raw = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)
