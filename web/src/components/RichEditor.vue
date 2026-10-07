@@ -2,8 +2,9 @@
 import { onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import Placeholder from '@tiptap/extension-placeholder'
+import Link from '@tiptap/extension-link'
 import StarterKit from '@tiptap/starter-kit'
-import { AlignCenter, AlignLeft, AlignRight, Bold, Heading2, Heading3, ImagePlus, Italic, List, Quote, Redo2, SeparatorHorizontal, Trash2, Undo2 } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, Bold, Code, Heading2, Heading3, ImagePlus, Italic, Link2, List, Quote, Redo2, SeparatorHorizontal, Trash2, Undo2 } from 'lucide-vue-next'
 import { Markdown } from 'tiptap-markdown'
 import { FigureImage } from '../editor/figureImage'
 import { prepareImage } from '../image'
@@ -11,7 +12,9 @@ import { dropForeignImages } from '../markdown'
 import { toastError } from '../toast'
 
 // WYSIWYG: the text is edited with the same classes the reader uses. Stored value is Markdown.
-const props = defineProps<{ upload: (file: File) => Promise<string> }>()
+// `docs` is the mode for the site's info pages (terms, guide, ...): links and inline code are kept, there are no images, so no `upload`.
+// Chapters (the default) keep their own rules: no links, no code, images through `upload`.
+const props = defineProps<{ upload?: (file: File) => Promise<string>; docs?: boolean }>()
 const model = defineModel<string>({ default: '' })
 
 // trimmed on both sides of the comparison below, so the stored text has no stray blank lines and typing never re-syncs the editor
@@ -20,7 +23,7 @@ let editor: Editor | null = null
 const current = shallowRef<Editor | null>(null) // lets the toolbar render once the editor exists
 
 async function addImage(file: File) {
-  if (!editor) return
+  if (!editor || !props.upload) return
   try {
     const url = await props.upload(await prepareImage(file, 1200))
     editor.chain().focus().setImage({ src: url, alt: 'ภาพประกอบ' }).run()
@@ -32,13 +35,13 @@ onMounted(() => {
   editor = new Editor({
     content: dropForeignImages(model.value),
     extensions: [
-      StarterKit.configure({ heading: { levels: [2, 3] }, code: false, codeBlock: false, strike: false }),
-      FigureImage.configure({ allowBase64: false, inline: false }),
-      Placeholder.configure({ placeholder: 'เขียนหรือวางเนื้อหาตอนที่นี่…' }),
+      StarterKit.configure({ heading: { levels: [2, 3] }, ...(props.docs ? {} : { code: false }), codeBlock: false, strike: false }),
+      ...(props.docs ? [Link.configure({ openOnClick: false, autolink: false, linkOnPaste: false })] : [FigureImage.configure({ allowBase64: false, inline: false })]),
+      Placeholder.configure({ placeholder: props.docs ? 'เขียนเนื้อหาหน้านี้ที่นี่…' : 'เขียนหรือวางเนื้อหาตอนที่นี่…' }),
       Markdown.configure({ html: false, linkify: false, breaks: false, tightLists: true }),
     ],
     editorProps: {
-      attributes: { class: 'reader-body serif', 'aria-label': 'เนื้อหาตอน', role: 'textbox', 'aria-multiline': 'true' },
+      attributes: { class: 'reader-body serif', 'aria-label': props.docs ? 'เนื้อหาหน้า' : 'เนื้อหาตอน', role: 'textbox', 'aria-multiline': 'true' },
       // pasted web content may carry <img> pointing anywhere: images only enter through our own upload
       transformPastedHTML: html => html.replace(/<img\b[^>]*>/gi, ''),
       handlePaste: (_v, e) => { const f = imageFrom(e.clipboardData?.files); if (!f) return false; addImage(f); return true },
@@ -67,6 +70,23 @@ const tools = [
   { icon: SeparatorHorizontal, label: 'เส้นคั่นฉาก', run: (e: Editor) => e.chain().focus().setHorizontalRule().run(), on: () => false },
 ] as const
 
+// info pages also get links and inline code. Links: an in-app path (/privacy), https:// or mailto: only, so nothing like javascript: gets in.
+const docTools = [
+  { sep: true },
+  {
+    icon: Link2, label: 'ลิงก์ (กดซ้ำที่ลิงก์เพื่อเอาออก)', on: (e: Editor) => e.isActive('link'),
+    run: (e: Editor) => {
+      if (e.isActive('link')) return e.chain().focus().extendMarkRange('link').unsetLink().run()
+      const href = window.prompt('ลิงก์ เช่น /privacy หรือ https://example.com')?.trim()
+      if (!href) return
+      if (!/^(\/(?!\/)|https?:\/\/|mailto:)/.test(href)) return toastError(new Error('ลิงก์ต้องขึ้นต้นด้วย / หรือ https:// หรือ mailto:'))
+      e.chain().focus().extendMarkRange('link').setLink({ href }).run()
+    },
+  },
+  { icon: Code, label: 'ข้อความแบบโค้ด', run: (e: Editor) => e.chain().focus().toggleCode().run(), on: (e: Editor) => e.isActive('code') },
+] as const
+const toolbar = props.docs ? [...tools, ...docTools] : tools
+
 // controls for the selected image; no focus() here, so typing in the caption box is not interrupted
 const imgAttrs = () => (current.value?.getAttributes('image') ?? {}) as { width?: number | null; align?: string; title?: string | null; alt?: string | null }
 const setImg = (attrs: Record<string, unknown>) => current.value?.chain().updateAttributes('image', attrs).run()
@@ -84,14 +104,14 @@ function pickImage(e: Event) {
 <template>
   <div class="mb-4 overflow-hidden rounded-lg border border-line bg-surface focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
     <div v-if="current" class="flex flex-wrap items-center gap-0.5 border-b border-line bg-bg/60 p-1.5" role="toolbar" aria-label="เครื่องมือจัดรูปแบบ">
-      <template v-for="(t, i) in tools" :key="i">
+      <template v-for="(t, i) in toolbar" :key="i">
         <span v-if="'sep' in t" class="mx-1 h-5 w-px bg-line" aria-hidden="true" />
         <button v-else type="button" :aria-label="t.label" :title="t.label" :aria-pressed="t.on(current)" :disabled="'off' in t && t.off(current)"
           :class="['grid size-8 place-items-center rounded-md transition-colors hover:bg-fg/10 disabled:opacity-35', t.on(current) && 'bg-primary/15 text-primary']"
           @click="t.run(current)"><component :is="t.icon" class="size-4" /></button>
       </template>
-      <span class="mx-1 h-5 w-px bg-line" aria-hidden="true" />
-      <label class="grid size-8 cursor-pointer place-items-center rounded-md transition-colors hover:bg-fg/10 focus-within:outline focus-within:outline-2 focus-within:outline-primary" title="แทรกรูป">
+      <span v-if="!docs" class="mx-1 h-5 w-px bg-line" aria-hidden="true" />
+      <label v-if="!docs" class="grid size-8 cursor-pointer place-items-center rounded-md transition-colors hover:bg-fg/10 focus-within:outline focus-within:outline-2 focus-within:outline-primary" title="แทรกรูป">
         <ImagePlus class="size-4" /><span class="sr-only">แทรกรูป</span>
         <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="pickImage" />
       </label>

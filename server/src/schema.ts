@@ -154,3 +154,30 @@ export const commentReports = pgTable('comment_reports', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   resolvedAt: timestamp('resolved_at'), // null = still waiting for an admin
 }, t => [unique('comment_reports_comment_reporter_key').on(t.commentId, t.reporterId), index('comment_reports_open_idx').on(t.resolvedAt)])
+
+// site-wide settings the admin can change without a rebuild (operator name, contact email); a missing key falls back to the server env, then a default
+export const siteSettings = pgTable('site_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+// Terms, privacy, guide, about and contact (Markdown). A row only exists once an admin has edited the page; without one the page shows the
+// default text shipped in pageDefaults.ts, so deleting the row is "back to the default"
+export const infoPages = pgTable('info_pages', {
+  slug: text('slug').primaryKey(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  updatedBy: integer('updated_by').references(() => users.id, { onDelete: 'set null' }),
+})
+
+// every saved version of an info page, so a bad edit can be looked up and put back
+export const infoPageRevisions = pgTable('info_page_revisions', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  editorId: integer('editor_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [index('info_page_revisions_slug_idx').on(t.slug, t.id)])
