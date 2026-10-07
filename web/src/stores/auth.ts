@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { client, ok } from '../api'
+import { prefsSignedIn, syncPrefs } from '../prefs'
 
 export type Role = 'admin' | 'writer' | 'user'
 export type User = { id: number; email: string; name: string; role: Role; bio?: string }
@@ -10,10 +11,12 @@ export const useAuth = defineStore('auth', {
   actions: {
     async load() {
       this.user = (await client.api.auth.me.get().catch(() => null))?.data ?? null
+      if (this.user) await syncPrefs()
       this.ready = true
     },
     async login(email: string, password: string) {
       this.user = await ok(client.api.auth.login.post({ email, password }))
+      await syncPrefs()
     },
     /** Creates the account and mails a code; there is no session until verify() succeeds. */
     async register(email: string, name: string, password: string) {
@@ -21,10 +24,12 @@ export const useAuth = defineStore('auth', {
     },
     async verify(email: string, code: string) {
       this.user = await ok(client.api.auth.verify.post({ email, code }))
+      await syncPrefs()
     },
     async logout() {
       await ok(client.api.auth.logout.post())
       this.user = null
+      prefsSignedIn(false)
     },
   },
 })

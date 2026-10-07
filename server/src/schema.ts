@@ -1,5 +1,8 @@
 import { sql } from 'drizzle-orm'
-import { type AnyPgColumn, boolean, check, doublePrecision, index, integer, pgTable, primaryKey, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { type AnyPgColumn, boolean, check, doublePrecision, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
+
+/** Reading settings that follow the account across devices (the web keeps its own copy in localStorage). Every field is optional: unset = the device default. */
+export type ReaderPrefs = { theme?: 'paper' | 'sepia' | 'ink'; fontSize?: number; fontFace?: 'serif' | 'sans'; measure?: 'narrow' | 'normal' | 'wide'; leading?: 'tight' | 'normal' | 'loose' }
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -8,6 +11,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   role: text('role', { enum: ['admin', 'writer', 'user'] }).notNull().default('user'), // writer: can write stories of their own; only an admin can grant it
   bio: text('bio').notNull().default(''), // shown on the author page
+  prefs: jsonb('prefs').$type<ReaderPrefs>().notNull().default({}),
   passwordChangedAt: timestamp('password_changed_at'), // a session token issued before this is refused, so a reset or change signs every other device out; null = never changed
   emailVerifiedAt: timestamp('email_verified_at'), // when they proved the address with a one-time code; null = cannot sign in yet (accounts that existed before this column were marked verified)
   termsAcceptedAt: timestamp('terms_accepted_at'), // when they ticked the terms + privacy box at sign-up; null = account made before that (or by the admin seed)

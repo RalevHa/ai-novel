@@ -421,6 +421,19 @@ const meRoutes = new Elysia({ prefix: '/me' })
       token.remove()
       return { ok: true }
     }, { body: t.Object({ code: t.String({ minLength: 6, maxLength: 6 }) }) })
+    .get('/prefs', async ({ me }) => (await db.select({ prefs: users.prefs }).from(users).where(eq(users.id, me!.id)))[0].prefs)
+    .put('/prefs', async ({ body, me, status }) => {
+      if (!Object.keys(body).length) return status(422, { error: 'ไม่มีค่าที่ต้องบันทึก' }) // unknown keys are stripped by the schema, so a malformed request must not wipe what is saved
+      return (await db.update(users).set({ prefs: body }).where(eq(users.id, me!.id)).returning({ prefs: users.prefs }))[0].prefs
+    }, {
+      body: t.Object({
+        theme: t.Optional(t.Union([t.Literal('paper'), t.Literal('sepia'), t.Literal('ink')])),
+        fontSize: t.Optional(t.Number({ minimum: 15, maximum: 30 })), // the reader's slider range
+        fontFace: t.Optional(t.Union([t.Literal('serif'), t.Literal('sans')])),
+        measure: t.Optional(t.Union([t.Literal('narrow'), t.Literal('normal'), t.Literal('wide')])),
+        leading: t.Optional(t.Union([t.Literal('tight'), t.Literal('normal'), t.Literal('loose')])),
+      }, { additionalProperties: false }),
+    })
     .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt })
       .from(readingProgress).where(eq(readingProgress.userId, me!.id)).orderBy(desc(readingProgress.updatedAt)))
     .put('/progress/:id', async ({ params, body, me, status }) => {
