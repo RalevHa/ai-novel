@@ -633,7 +633,23 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       catch (e) { return status(502, { error: (e as Error).message }) }
     }, id)
     .delete('/chapters/:id', async ({ params }) => {
-      const [c] = await db.delete(chapters).where(eq(chapters.id, params.id)).returning({ content: chapters.content })
+      const c = await db.transaction(async tx => {
+        const [c] = await tx.delete(chapters).where(eq(chapters.id, params.id)).returning({ content: chapters.content, storyId: chapters.storyId, no: chapters.no })
+        if (!c) return
+        // close the gap so the next chapter takes the deleted number. Two steps (negate, then shift) because the unique
+        // (story_id, no) index is checked row by row and would trip on a one-step `no - 1`.
+        const shift = async (t: typeof chapters | typeof chapterReads, storyId: ReturnType<typeof eq>) => {
+          await tx.update(t).set({ no: sql`-${t.no}` }).where(and(storyId, sql`${t.no} > ${c.no}`))
+          await tx.update(t).set({ no: sql`-${t.no} - 1` }).where(and(storyId, sql`${t.no} < 0`))
+        }
+        await shift(chapters, eq(chapters.storyId, c.storyId))
+        await tx.delete(chapterReads).where(and(eq(chapterReads.storyId, c.storyId), eq(chapterReads.no, c.no)))
+        await shift(chapterReads, eq(chapterReads.storyId, c.storyId))
+        // readers who stopped in a later chapter keep their place; those who stopped in the deleted one restart the chapter now numbered the same
+        await tx.update(readingProgress).set({ no: sql`${readingProgress.no} - 1` }).where(and(eq(readingProgress.storyId, c.storyId), sql`${readingProgress.no} > ${c.no}`))
+        await tx.update(readingProgress).set({ pos: null }).where(and(eq(readingProgress.storyId, c.storyId), eq(readingProgress.no, c.no)))
+        return c
+      })
       if (c) await pruneUnused(imageNames(c.content))
       return { ok: true }
     }, id)
