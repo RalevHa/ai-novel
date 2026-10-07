@@ -105,7 +105,7 @@ onMounted(async () => {
         <BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" />
         <span v-if="badge(s)" class="absolute left-2 top-2 rounded-full bg-surface/95 px-2 py-0.5 text-[11px] font-medium text-fg shadow">{{ badge(s) }}</span>
       </div>
-      <div class="line-clamp-2 mt-3 font-serif font-bold leading-snug">{{ s.title }}</div>
+      <div class="line-clamp-2 mt-3 min-h-[2.75em] text-balance font-serif font-bold leading-snug">{{ s.title }}</div>
       <div class="muted mt-1 text-xs">{{ s.chapterCount }} ตอน<template v-if="s.mood"> · {{ s.mood }}</template></div>
       <div class="muted truncate text-xs">โดย {{ s.authorName }}</div>
       <RatingLine :rating="s.rating" :count="s.ratingCount" />
