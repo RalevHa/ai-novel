@@ -8,3 +8,5 @@ server/uploads
 *.key
 *.pem
 credentials.json
+# session files written by the autoharness plugin in every folder Claude Code is started from
+**/.claude/autoharness/
