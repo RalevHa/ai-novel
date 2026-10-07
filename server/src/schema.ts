@@ -12,6 +12,7 @@ export const users = pgTable('users', {
   role: text('role', { enum: ['admin', 'writer', 'user'] }).notNull().default('user'), // writer: can write stories of their own; only an admin can grant it
   bio: text('bio').notNull().default(''), // shown on the author page
   prefs: jsonb('prefs').$type<ReaderPrefs>().notNull().default({}),
+  suspendedAt: timestamp('suspended_at'), // set by an admin: cannot sign in and existing sessions stop working; null = active
   passwordChangedAt: timestamp('password_changed_at'), // a session token issued before this is refused, so a reset or change signs every other device out; null = never changed
   emailVerifiedAt: timestamp('email_verified_at'), // when they proved the address with a one-time code; null = cannot sign in yet (accounts that existed before this column were marked verified)
   termsAcceptedAt: timestamp('terms_accepted_at'), // when they ticked the terms + privacy box at sign-up; null = account made before that (or by the admin seed)

@@ -127,6 +127,13 @@
       "when": 1791359730274,
       "tag": "0017_reader_prefs",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791359886782,
+      "tag": "0018_suspend_users",
+      "breakpoints": true
     }
   ]
 }

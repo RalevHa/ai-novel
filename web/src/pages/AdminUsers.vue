@@ -24,6 +24,7 @@ const data = ref<Data | null>(null), loading = ref(true)
 const loadLog = () => ok(client.api.admin.audit.get())
 const log = ref<Awaited<ReturnType<typeof loadLog>>>([])
 const pending = ref<{ row: Row; role: RoleKey } | null>(null), busy = ref(false)
+const suspending = ref<Row | null>(null)
 
 async function refresh() {
   try { data.value = await load(); page.value = data.value.page } catch (e) { toastError(e) }
@@ -47,6 +48,17 @@ async function save(r: Row, next: RoleKey) {
     await ok(client.api.admin.users({ id: r.id }).patch({ role: next }))
     toast(`${r.name} เป็น${roleName(next)}แล้ว`)
     pending.value = null
+    await Promise.all([refresh(), loadLog().then(l => { log.value = l })])
+  } catch (e) { toastError(e); await refresh() } finally { busy.value = false }
+}
+
+// suspending asks first (it signs the person out); lifting it is immediate
+async function setSuspended(r: Row, suspended: boolean) {
+  busy.value = true
+  try {
+    await ok(client.api.admin.users({ id: r.id }).suspend.patch({ suspended }))
+    toast(suspended ? `ระงับ ${r.name} แล้ว` : `เลิกระงับ ${r.name} แล้ว`)
+    suspending.value = null
     await Promise.all([refresh(), loadLog().then(l => { log.value = l })])
   } catch (e) { toastError(e); await refresh() } finally { busy.value = false }
 }
@@ -85,10 +97,13 @@ const badge = (r: RoleKey) => ['rounded-full px-2 py-0.5 text-[11px]', r === 'ad
           <span v-else class="truncate font-medium">{{ r.name }}</span>
           <span v-if="r.id === auth.user?.id" class="rounded-full bg-fg/10 px-2 py-0.5 text-[11px]">คุณ</span>
           <span :class="badge(r.role)">{{ roleName(r.role) }}</span>
+          <span v-if="r.suspendedAt" class="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] text-danger">ถูกระงับ</span>
         </div>
         <div class="muted truncate text-sm">{{ r.email }}</div>
         <div class="muted text-xs">สมัคร {{ fmtDate(r.createdAt) }}<template v-if="r.storyCount"> · {{ r.storyCount }} เรื่อง</template></div>
       </div>
+      <Button v-if="r.suspendedAt" variant="outline" size="sm" :disabled="busy" @click="setSuspended(r, false)">เลิกระงับ</Button>
+      <Button v-else-if="r.id !== auth.user?.id && r.role !== 'admin'" variant="ghost" size="sm" :disabled="busy" @click="suspending = r">ระงับ</Button>
       <span v-if="r.id === auth.user?.id" class="muted text-xs">เปลี่ยนสิทธิ์ของตัวเองไม่ได้</span>
       <select v-else :value="r.role" :disabled="busy" :aria-label="`สิทธิ์ของ ${r.name}`" class="h-11 rounded-lg border border-line bg-surface px-2 text-sm disabled:opacity-60 sm:h-9"
         @change="choose(r, ($event.target as HTMLSelectElement).value as RoleKey, $event.target as HTMLSelectElement)">
@@ -105,10 +120,19 @@ const badge = (r: RoleKey) => ['rounded-full px-2 py-0.5 text-[11px]', r === 'ad
       <li v-for="l in log" :key="l.id" class="flex flex-wrap gap-x-3 gap-y-1 p-3">
         <span class="muted w-full sm:w-auto">{{ fmtDateTime(l.createdAt) }}</span>
         <span v-if="l.action === 'comment_delete'"><b>{{ l.actor ?? 'ไม่ทราบ' }}</b> ลบความคิดเห็นของ <b>{{ l.target ?? 'ไม่ทราบ' }}</b>: <span class="muted">“{{ l.detail }}”</span></span>
+        <span v-else-if="l.action === 'suspend' || l.action === 'unsuspend'"><b>{{ l.actor ?? 'ไม่ทราบ' }}</b> {{ l.action === 'suspend' ? 'ระงับ' : 'เลิกระงับ' }}บัญชีของ <b>{{ l.target ?? 'ไม่ทราบ' }}</b></span>
         <span v-else><b>{{ l.actor ?? 'ไม่ทราบ' }}</b> เปลี่ยนสิทธิ์ของ <b>{{ l.target ?? 'ไม่ทราบ' }}</b>: {{ l.detail.split(' → ').map(roleName).join(' → ') }}</span>
       </li>
     </ul>
   </details>
+
+  <Modal :open="!!suspending" :title="`ระงับบัญชีของ ${suspending?.name}?`" size="sm" @close="suspending = null">
+    <p class="muted">เขาจะเข้าสู่ระบบไม่ได้ และเครื่องที่ล็อกอินค้างอยู่จะใช้งานไม่ได้ทันที ความคิดเห็นและรีวิวที่เขียนไว้ยังอยู่ เลิกระงับได้ทุกเมื่อ และทุกครั้งจะบันทึกในประวัติ</p>
+    <template #footer>
+      <Button variant="ghost" @click="suspending = null">ยกเลิก</Button>
+      <Button variant="danger" :loading="busy" @click="suspending && setSuspended(suspending, true)">ระงับบัญชี</Button>
+    </template>
+  </Modal>
 
   <Modal :open="!!pending" :title="`ให้สิทธิ์แอดมินกับ ${pending?.row.name}?`" size="sm" @close="pending = null">
     <p class="muted">{{ HINT.admin }} และยกเลิกได้ภายหลังจากหน้านี้เท่านั้น เปลี่ยนแล้วจะถูกบันทึกในประวัติ</p>
