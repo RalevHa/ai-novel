@@ -21,6 +21,7 @@ import { db } from './db'
 import { streamChat, type Usage } from './openrouter'
 import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviews, readingProgress, stories, users } from './schema'
 import { releasedAtFor } from './release'
+import { siteRoutes } from './site'
 import { restore, snapshot } from './versions'
 import { liveAt, visible, visibleSql } from './visibility'
 
@@ -666,6 +667,7 @@ export const app = new Elysia({ prefix: '/api' })
   .use(authRoutes)
   .use(readerRoutes)
   .use(commentRoutes)
+  .use(siteRoutes)
   .use(meRoutes)
   .use(adminRoutes)
 

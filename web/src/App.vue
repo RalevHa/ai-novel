@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, BookmarkCheck, ExternalLink, Flag, LibraryBig, LogOut, Moon, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
+import { Bell, BookmarkCheck, ExternalLink, Flag, Globe, LibraryBig, LogOut, Moon, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
 import Toaster from './components/ui/Toaster.vue'
@@ -37,7 +37,7 @@ const menu = computed<MenuEntry[]>(() => [
 ])
 const nav = computed(() => [
   { to: '/admin/stories', label: 'นิยาย', icon: LibraryBig },
-  ...(auth.isAdmin ? [{ to: '/admin/users', label: 'ผู้ใช้', icon: Users }, { to: '/admin/reports', label: 'รายงาน', icon: Flag, badge: reports.value }] : []), // writers manage stories only
+  ...(auth.isAdmin ? [{ to: '/admin/users', label: 'ผู้ใช้', icon: Users }, { to: '/admin/reports', label: 'รายงาน', icon: Flag, badge: reports.value }, { to: '/admin/site', label: 'เว็บไซต์', icon: Globe }] : []), // writers manage stories only
 ])
 const link = 'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-fg/5'
 // a plain #main anchor would make the router navigate; focus the landmark instead
