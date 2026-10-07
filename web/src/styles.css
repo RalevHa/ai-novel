@@ -62,6 +62,25 @@
   .cover.has-img::after { display: none; }
   .cover .obi { position: absolute; left: 0; right: 0; bottom: 0; height: 12.5cqw; display: flex; align-items: center; padding: 0 12cqw; background: rgba(250,250,247,.94); color: #274472; font-weight: 600; font-size: 4.4cqw; letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+
+  /* landing */
+  .hero::before { content: ''; position: absolute; inset: -2rem 0 -1rem; z-index: -1; pointer-events: none; background: radial-gradient(60% 70% at 78% 40%, rgb(var(--c-primary) / .10), transparent 70%), radial-gradient(35% 45% at 18% 25%, rgb(var(--c-secondary) / .12), transparent 70%); }
+  .sun-disc { position: absolute; z-index: -1; inset: 6% 4% 2% 8%; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgb(var(--c-primary) / .22), rgb(var(--c-primary) / .06) 65%, transparent 72%); filter: blur(.5px); }
+  .chip { @apply inline-flex items-baseline gap-1.5 rounded-full border border-line bg-surface/80 px-3.5 py-1.5 text-fg/80; }
+  .head::after { content: ''; order: 2; flex: 1; height: 1px; align-self: center; background: linear-gradient(90deg, rgb(var(--c-line)), transparent); }
+  .head > a { order: 3; }
+  .perk { transition: border-color .2s ease, background-color .2s ease; }
+  .perk:hover { border-color: rgb(var(--c-primary) / .45); background-color: rgb(var(--c-surface)); }
+  .cta { background: linear-gradient(135deg, rgb(var(--c-primary)), color-mix(in srgb, rgb(var(--c-primary)) 70%, rgb(var(--c-secondary)))); box-shadow: 0 24px 48px -24px rgb(var(--c-primary) / .55); }
+  .hero-book .cover { box-shadow: 0 2px 4px rgba(0,0,0,.2), 0 24px 40px -14px rgba(0,0,0,.45); }
+  .rise { animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; translate: 0 18px; } to { opacity: 1; translate: 0 0; } }
+  /* the picks section is pinned on desktop (see LandingPage motion()): the books stack in one place and GSAP moves them */
+  .pinned { display: flex; flex-direction: column; min-height: calc(100vh - 72px); }
+  .pinned .pin { position: relative; height: min(460px, calc(100vh - 14rem)); margin-block: auto; }
+  .pinned .pick { position: absolute; inset: 0; }
+  @media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
+
   /* reader */
   .reader-body { font-size: var(--reader-size, 19px); line-height: var(--reader-lh, 2.05); }
   .reader-body p { margin: 0 0 1.05em; overflow-wrap: anywhere; }
