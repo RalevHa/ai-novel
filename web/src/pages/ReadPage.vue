@@ -85,6 +85,9 @@ watch(() => [id.value, no.value], async () => {
 const resumed = ref(false) // the "continuing where you left off" notice
 let tracking = false, markedRead = false, userMoved = false, ro: ResizeObserver | null = null, notice: ReturnType<typeof setTimeout> | undefined
 const movedByUser = () => { userMoved = true }
+// Progress (the bar, the saved position, "finished") is measured against the chapter, not the whole page: the comments sit below it and
+// opening them makes the page much taller, which must not change the percentage. They start where the section starts.
+const readHeight = () => { const c = document.querySelector('[data-comments]'); return c ? c.getBoundingClientRect().top + scrollY : document.documentElement.scrollHeight }
 const sid = () => Number(id.value)
 
 async function startReading(storyId: number, chapterNo: number) {
@@ -95,7 +98,7 @@ async function startReading(storyId: number, chapterNo: number) {
   const saved = await getPos(storyId, chapterNo)
   if (storyId !== sid() || chapterNo !== no.value) return // the reader moved on while we waited
   if (saved >= RESTORE_MIN && saved < FINISHED && route.query.comments !== '1') { // coming from a notification: the comments are the destination, not the old position
-    const apply = () => scrollTo(0, scrollTarget(saved, doc.scrollHeight, doc.clientHeight))
+    const apply = () => scrollTo(0, scrollTarget(saved, readHeight(), doc.clientHeight))
     apply()
     resumed.value = true; notice = setTimeout(() => { resumed.value = false }, 7000)
     // images and fonts settle after the first paint and move the target: follow until the reader takes over
@@ -138,7 +141,7 @@ const backToTop = () => scrollTo({ top: 0, behavior: matchMedia('(prefers-reduce
 
 const onScroll = () => {
   const h = document.documentElement
-  const f = scrollFraction(h.scrollTop, h.scrollHeight, h.clientHeight)
+  const f = scrollFraction(h.scrollTop, readHeight(), h.clientHeight)
   progress.value = f * 100
   const hide = chromeHidden(hidden, h.scrollTop, h.scrollTop - lastY)
   lastY = h.scrollTop
