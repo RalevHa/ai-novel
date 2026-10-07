@@ -5,6 +5,7 @@ import { Popover, PopoverButton, PopoverPanel } from '@headlessui/vue'
 import { ArrowUp, ChevronLeft, ChevronRight, List, Pause, Play, Square, Type, Volume2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import ChapterSelect from '../components/ChapterSelect.vue'
+import CommentSection from '../components/CommentSection.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
@@ -151,7 +152,7 @@ const onScroll = () => {
 let touchStart: { x: number; y: number } | null = null
 const onTouchStart = (e: TouchEvent) => {
   const t = e.touches[0]
-  touchStart = e.touches.length === 1 && !(e.target as HTMLElement).closest('input, textarea, select, button, a, figure, [role=listbox], [role=dialog], [contenteditable]') ? { x: t.clientX, y: t.clientY } : null
+  touchStart = e.touches.length === 1 && !(e.target as HTMLElement).closest('input, textarea, select, button, a, figure, [data-comments], [role=listbox], [role=dialog], [contenteditable]') ? { x: t.clientX, y: t.clientY } : null
 }
 const onTouchEnd = (e: TouchEvent) => {
   const s = touchStart; touchStart = null
@@ -244,6 +245,7 @@ onBeforeUnmount(() => {
     </nav>
     <p v-if="!next" class="muted mt-4 text-center text-xs">นี่คือตอนล่าสุด</p>
     <p class="muted mt-1 hidden text-center text-xs md:block">ใช้ปุ่มลูกศรซ้ายและขวาบนคีย์บอร์ดเพื่อเปลี่ยนตอน</p>
+    <CommentSection :story-id="Number(id)" :no="no" collapsible />
   </div>
 
   <button v-if="showTop" type="button" class="fixed bottom-20 right-4 z-40 grid size-11 place-items-center rounded-full border border-line bg-surface shadow-lg md:bottom-6" aria-label="กลับขึ้นบน" @click="backToTop"><ArrowUp class="size-5" /></button>

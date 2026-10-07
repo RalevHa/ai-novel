@@ -95,7 +95,7 @@ onMounted(async () => {
   <div v-else-if="!shown.length && !error" class="py-12 text-center">
     <div class="font-serif text-xl">ยังไม่มีนิยายที่เผยแพร่</div>
     <p class="muted mb-4 mt-2">เรื่องที่เผยแพร่แล้วจะขึ้นที่นี่</p>
-    <Button v-if="auth.isAdmin" to="/admin/stories">ไปสร้างเรื่องแรก</Button>
+    <Button v-if="auth.canWrite" to="/admin/stories">ไปสร้างเรื่องแรก</Button>
   </div>
 
   <div v-else class="shelf">
@@ -106,6 +106,7 @@ onMounted(async () => {
       </div>
       <div class="line-clamp-2 mt-3 font-serif font-bold leading-snug">{{ s.title }}</div>
       <div class="muted mt-1 text-xs">{{ s.chapterCount }} ตอน<template v-if="s.mood"> · {{ s.mood }}</template></div>
+      <div class="muted truncate text-xs">โดย {{ s.authorName }}</div>
     </router-link>
   </div>
 </template>
