@@ -66,7 +66,8 @@ onMounted(async () => {
       <p v-if="stories.length" class="muted mt-6 text-sm">{{ stories.length }} เรื่อง · {{ chapterTotal }} ตอน · นิยายทุกเรื่องเขียนโดย AI</p>
     </div>
 
-    <div class="relative mx-auto aspect-[1.1] w-full max-w-[460px]">
+    <!-- isolate: the covers' own z-index values (30/20/10) stay inside this box; they used to compete with the header (also z-30) and paint over its account menu -->
+    <div class="relative isolate mx-auto aspect-[1.1] w-full max-w-[460px]">
       <template v-if="featured.length">
         <div v-for="(s, i) in featured" :key="s.id" class="absolute" :style="{ left: featured.length === 1 ? SLOTS[0].left : SLOTS[i].left, top: SLOTS[i].top, width: SLOTS[i].width, zIndex: SLOTS[i].z, transform: `rotate(${SLOTS[i].turn}deg)` }">
           <router-link :to="`/story/${s.id}`" class="book" :aria-label="s.title"><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
