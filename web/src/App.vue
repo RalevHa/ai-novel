@@ -1,15 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BookmarkCheck, ExternalLink, LibraryBig, LogOut, Moon, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
+import { Bell, BookmarkCheck, ExternalLink, Flag, LibraryBig, LogOut, Moon, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
 import Toaster from './components/ui/Toaster.vue'
+import { client, ok } from './api'
 import { useAuth } from './stores/auth'
+import { useNotifications } from './stores/notifications'
 import { isDark, toggleTheme } from './theme'
 
-const auth = useAuth(), route = useRoute(), router = useRouter()
+const auth = useAuth(), route = useRoute(), router = useRouter(), bell = useNotifications()
 const inAdmin = computed(() => route.path.startsWith('/admin'))
+
+// the bell: poll the unread number while someone is signed in (and look again whenever they move to another page)
+watch(() => auth.user?.id, id => { id ? bell.start() : bell.stop() }, { immediate: true })
+watch(() => route.fullPath, () => { if (auth.user) bell.refresh() })
+onBeforeUnmount(() => bell.stop())
+
+// admins: how many reported comments are waiting, shown on the "รายงาน" tab
+const reports = ref(0)
+watch(() => [auth.isAdmin, route.fullPath], async () => {
+  if (!auth.isAdmin || !inAdmin.value) return
+  try { reports.value = (await ok(client.api.admin.reports.get())).length } catch { /* the tab just shows no number */ }
+}, { immediate: true })
 
 async function logout() {
   await auth.logout()
@@ -23,7 +37,7 @@ const menu = computed<MenuEntry[]>(() => [
 ])
 const nav = computed(() => [
   { to: '/admin/stories', label: 'นิยาย', icon: LibraryBig },
-  ...(auth.isAdmin ? [{ to: '/admin/users', label: 'ผู้ใช้', icon: Users }] : []), // writers manage stories only
+  ...(auth.isAdmin ? [{ to: '/admin/users', label: 'ผู้ใช้', icon: Users }, { to: '/admin/reports', label: 'รายงาน', icon: Flag, badge: reports.value }] : []), // writers manage stories only
 ])
 const link = 'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-fg/5'
 // a plain #main anchor would make the router navigate; focus the landmark instead
@@ -37,7 +51,7 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
     <aside class="fixed inset-y-0 left-0 hidden w-56 flex-col border-r border-line bg-surface p-3 md:flex">
       <router-link to="/" class="mb-3 flex items-center gap-3 p-2" aria-label="จัดการ ไปหน้าอ่าน"><span class="seal" aria-hidden="true" /><span class="font-medium">จัดการ</span></router-link>
       <nav class="flex flex-col gap-1">
-        <router-link v-for="n in nav" :key="n.to" :to="n.to" :class="link" active-class="bg-primary/10 font-medium text-primary"><component :is="n.icon" class="size-5" />{{ n.label }}</router-link>
+        <router-link v-for="n in nav" :key="n.to" :to="n.to" :class="link" active-class="bg-primary/10 font-medium text-primary"><component :is="n.icon" class="size-5" />{{ n.label }}<span v-if="'badge' in n && n.badge" class="ml-auto rounded-full bg-danger px-1.5 text-[11px] text-white">{{ n.badge }}</span></router-link>
       </nav>
       <div class="mt-auto flex flex-col gap-1">
         <router-link to="/" :class="link"><ExternalLink class="size-5" />ดูหน้าอ่าน</router-link>
@@ -55,7 +69,7 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
     <main id="main" tabindex="-1" class="mx-auto max-w-[1000px] px-4 pb-24 pt-6 outline-none md:px-8 md:pb-10 md:pt-8"><router-view /></main>
 
     <nav class="fixed inset-x-0 bottom-0 z-30 grid h-16 auto-cols-fr grid-flow-col border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="เมนูจัดการ">
-      <router-link v-for="n in nav" :key="n.to" :to="n.to" class="flex flex-col items-center justify-center gap-1 text-xs text-fg/75" active-class="!text-primary font-medium"><component :is="n.icon" class="size-5" />{{ n.label }}</router-link>
+      <router-link v-for="n in nav" :key="n.to" :to="n.to" class="flex flex-col items-center justify-center gap-1 text-xs text-fg/75" active-class="!text-primary font-medium"><span class="relative"><component :is="n.icon" class="size-5" /><span v-if="'badge' in n && n.badge" class="absolute -right-2 -top-1.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 text-white">{{ n.badge }}</span></span>{{ n.label }}</router-link>
       <router-link to="/" class="flex flex-col items-center justify-center gap-1 text-xs text-fg/75"><ExternalLink class="size-5" />หน้าอ่าน</router-link>
     </nav>
   </div>
@@ -69,6 +83,9 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
         </router-link>
         <div class="flex-1" />
         <Button variant="ghost" size="icon" :aria-label="isDark ? 'เปลี่ยนเป็นธีมสว่าง' : 'เปลี่ยนเป็นธีมมืด'" @click="toggleTheme"><Sun v-if="isDark" class="size-5" /><Moon v-else class="size-5" /></Button>
+        <Button v-if="auth.user" variant="ghost" size="icon" to="/notifications" class="relative" :aria-label="bell.unread ? `การแจ้งเตือน (${bell.unread} ใหม่)` : 'การแจ้งเตือน'">
+          <Bell class="size-5" /><span v-if="bell.unread" class="absolute right-1 top-1 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 text-white">{{ bell.unread > 9 ? '9+' : bell.unread }}</span>
+        </Button>
         <DropMenu v-if="auth.user" :items="menu" label="บัญชี" :heading="auth.user.name" :sub="auth.user.email">
           <template #button="{ label }">
             <button type="button" class="grid size-9 place-items-center rounded-full bg-primary font-medium text-on-primary" :aria-label="label">{{ auth.user.name.slice(0, 1).toUpperCase() }}</button>

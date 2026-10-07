@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
+import RatingLine from '../components/RatingLine.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import { setTitle } from '../title'
@@ -38,6 +39,7 @@ onMounted(async () => {
         <BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" />
         <div class="line-clamp-2 mt-3 font-serif font-bold leading-snug">{{ s.title }}</div>
         <div class="muted mt-1 text-xs">{{ s.chapterCount }} ตอน<template v-if="s.mood"> · {{ s.mood }}</template></div>
+        <RatingLine :rating="s.rating" :count="s.ratingCount" />
       </router-link>
     </div>
   </template>

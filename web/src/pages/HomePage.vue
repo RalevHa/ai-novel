@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Search, X } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
+import RatingLine from '../components/RatingLine.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { fmtDate, parseDb } from '../genre'
@@ -75,7 +76,7 @@ onMounted(async () => {
         class="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-11 outline-none placeholder:text-fg/40 focus:border-primary focus:ring-2 focus:ring-primary/25" />
       <button v-if="query" type="button" class="absolute inset-y-0 right-0 grid w-11 place-items-center text-fg/60 hover:text-fg" aria-label="ล้างคำค้นหา" @click="query = ''"><X class="size-4" /></button>
     </div>
-    <Segmented v-model="sort" :options="SORTS" label="เรียงลำดับ" class="sm:w-72" />
+    <Segmented v-model="sort" :options="SORTS" label="เรียงลำดับ" class="sm:w-[26rem]" />
   </div>
 
   <div v-if="genres.length > 1 || myStories" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="กรองตามแนว">
@@ -107,6 +108,7 @@ onMounted(async () => {
       <div class="line-clamp-2 mt-3 font-serif font-bold leading-snug">{{ s.title }}</div>
       <div class="muted mt-1 text-xs">{{ s.chapterCount }} ตอน<template v-if="s.mood"> · {{ s.mood }}</template></div>
       <div class="muted truncate text-xs">โดย {{ s.authorName }}</div>
+      <RatingLine :rating="s.rating" :count="s.ratingCount" />
     </router-link>
   </div>
 </template>

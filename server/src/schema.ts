@@ -8,6 +8,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   role: text('role', { enum: ['admin', 'writer', 'user'] }).notNull().default('user'), // writer: can write stories of their own; only an admin can grant it
   bio: text('bio').notNull().default(''), // shown on the author page
+  notificationsSeenAt: timestamp('notifications_seen_at'), // new-chapter items count toward the bell badge only when released after this
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
@@ -39,6 +40,7 @@ export const chapters = pgTable('chapters', {
   model: text('model').notNull().default(''),
   published: boolean('published').notNull().default(false), // AI writes a draft, admin publishes
   publishAt: timestamp('publish_at'), // set + published = goes live at this time (UTC); null = live as soon as published
+  releasedAt: timestamp('released_at'), // when it went (or goes) live for readers, see release.ts; null = hidden. "New chapter" notifications compare against this
   views: integer('views').notNull().default(0), // anonymous count of times readers opened the chapter (no user, no IP stored)
   finishes: integer('finishes').notNull().default(0), // ...and of times they scrolled to the end
   tokens: integer('tokens'), // total tokens spent writing + summarising; null = unknown (older chapters, or the stream stopped before OpenRouter reported usage)
@@ -108,6 +110,7 @@ export const comments = pgTable('comments', {
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   parentId: integer('parent_id').references((): AnyPgColumn => comments.id, { onDelete: 'cascade' }), // null = top-level
   body: text('body').notNull(),
+  editedAt: timestamp('edited_at'), // set when the author edits the text; null = never edited
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [index('comments_chapter_idx').on(t.chapterId, t.id), index('comments_parent_idx').on(t.parentId)])
 
@@ -128,3 +131,25 @@ export const reviews = pgTable('reviews', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, t => [unique('reviews_story_user_key').on(t.storyId, t.userId), check('reviews_rating_range', sql`${t.rating} between 1 and 5`)])
+
+// "someone replied to you" / "your comment got an upvote". One row per (recipient, kind, comment): a new upvote on the same comment
+// just marks its row unread again; the score shown is read live from the comment
+export const notifications = pgTable('notifications', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type', { enum: ['reply', 'vote'] }).notNull(),
+  actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }), // who replied; null for votes (voters stay anonymous)
+  commentId: integer('comment_id').notNull().references(() => comments.id, { onDelete: 'cascade' }), // the reply itself, or the comment that was voted on
+  readAt: timestamp('read_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [unique('notifications_user_type_comment_key').on(t.userId, t.type, t.commentId), index('notifications_user_idx').on(t.userId, t.id)])
+
+// readers flag comments for the admins; one open report per reader per comment, dismissed or acted on from /admin/reports
+export const commentReports = pgTable('comment_reports', {
+  id: serial('id').primaryKey(),
+  commentId: integer('comment_id').notNull().references(() => comments.id, { onDelete: 'cascade' }),
+  reporterId: integer('reporter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reason: text('reason').notNull().default(''),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at'), // null = still waiting for an admin
+}, t => [unique('comment_reports_comment_reporter_key').on(t.commentId, t.reporterId), index('comment_reports_open_idx').on(t.resolvedAt)])

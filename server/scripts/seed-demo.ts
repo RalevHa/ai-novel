@@ -71,7 +71,7 @@ for (const s of SEEDS) {
   const [story] = await db.insert(stories).values({ authorId, title: s.title, synopsis: s.synopsis, genre: s.genre, mood: s.mood, status: s.status, published: true, createdAt: born }).returning({ id: stories.id })
   const rows = s.chapters.map((title, i) => {
     const at = new Date(born.getTime() + (i + 1) * (1.5 + rnd()) * DAY)
-    return { storyId: story.id, no: i + 1, title: `ตอนที่ ${i + 1}: ${title}`, content: `# ตอนที่ ${i + 1}: ${title}\n\n${[pick(PARAS), pick(PARAS), pick(PARAS), pick(PARAS)].join('\n\n')}`, published: true, views: Math.floor(40 + rnd() * 400), finishes: Math.floor(20 + rnd() * 200), createdAt: at }
+    return { storyId: story.id, no: i + 1, title: `ตอนที่ ${i + 1}: ${title}`, content: `# ตอนที่ ${i + 1}: ${title}\n\n${[pick(PARAS), pick(PARAS), pick(PARAS), pick(PARAS)].join('\n\n')}`, published: true, releasedAt: at, views: Math.floor(40 + rnd() * 400), finishes: Math.floor(20 + rnd() * 200), createdAt: at }
   })
   const inserted = await db.insert(chapters).values(rows).returning({ id: chapters.id, createdAt: chapters.createdAt })
   await db.insert(characters).values(s.cast.map(([name, role, profile]) => ({ storyId: story.id, name, role, profile })))

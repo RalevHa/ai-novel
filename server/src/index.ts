@@ -19,7 +19,8 @@ import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
 import { db } from './db'
 import { streamChat, type Usage } from './openrouter'
-import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentVotes, comments, reviews, readingProgress, stories, users } from './schema'
+import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviews, readingProgress, stories, users } from './schema'
+import { releasedAtFor } from './release'
 import { restore, snapshot } from './versions'
 import { liveAt, visible, visibleSql } from './visibility'
 
@@ -36,6 +37,8 @@ const listFields = {
   id: stories.id, title: stories.title, synopsis: stories.synopsis, genre: stories.genre, mood: stories.mood, status: stories.status, createdAt: stories.createdAt, coverImage: stories.coverImage,
   authorId: stories.authorId, authorName: users.name,
   chapterCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id and ${visibleSql})`,
+  rating: sql<number | null>`(select round(avg(reviews.rating)::numeric, 1)::float8 from reviews where reviews.story_id = stories.id)`, // null = no reviews yet
+  ratingCount: sql<number>`(select count(*)::int from reviews where reviews.story_id = stories.id)`,
   updatedAt: sql<string | null>`(select max(coalesce(chapters.publish_at, chapters.created_at)) from chapters where chapters.story_id = stories.id and ${visibleSql})`,
 }
 
@@ -98,7 +101,7 @@ const readerRoutes = new Elysia()
     const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, mood: true, status: true, coverImage: true, createdAt: true, authorId: true } })
     if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
     const [{ name: authorName }] = await db.select({ name: users.name }).from(users).where(eq(users.id, s.authorId))
-    const list = await db.select({ no: chapters.no, title: chapters.title, createdAt: chapters.createdAt }).from(chapters)
+    const list = await db.select({ no: chapters.no, title: chapters.title, createdAt: chapters.createdAt, commentCount: sql<number>`(select count(*)::int from comments where comments.chapter_id = chapters.id)` }).from(chapters)
       .where(and(eq(chapters.storyId, s.id), visible)).orderBy(asc(chapters.no))
     const cast = await db.select({ id: characters.id, name: characters.name, role: characters.role, profile: characters.profile, image: characters.image })
       .from(characters).where(and(eq(characters.storyId, s.id), eq(characters.visible, true))).orderBy(asc(characters.id))
@@ -164,7 +167,7 @@ async function listComments(storyId: number, no: number, query: { page?: number;
   const [total, all] = await Promise.all([db.$count(comments, topLevel), db.$count(comments, inChapter)]) // total pages top-level threads; all includes replies
   const { page, size, offset } = paging(query, total, 'first', 20)
   const fields = {
-    id: comments.id, parentId: comments.parentId, body: comments.body, createdAt: comments.createdAt, userId: comments.userId, userName: users.name, storyAuthor: stories.authorId,
+    id: comments.id, parentId: comments.parentId, body: comments.body, createdAt: comments.createdAt, editedAt: comments.editedAt, userId: comments.userId, userName: users.name, storyAuthor: stories.authorId,
     score: scoreSql, myVote: me ? sql<number | null>`(select value from comment_votes where comment_id = comments.id and user_id = ${me.id})` : sql<number | null>`null`,
   }
   const base = () => db.select(fields).from(comments).innerJoin(users, eq(users.id, comments.userId)).innerJoin(stories, eq(stories.id, comments.storyId))
@@ -183,13 +186,15 @@ async function addComment(storyId: number, no: number, text: string, parentId: n
   if (limited(`comment:${me.id}`, 10, 10 * 60_000)) return status(429, { error: 'คอมเมนต์บ่อยเกินไป รอสักครู่แล้วลองใหม่' })
   const chapterId = await liveChapterId(storyId, no)
   if (!chapterId) return status(404, { error: 'ไม่พบข้อมูล' })
-  let parent: number | null = null
+  let parent: number | null = null, answered: number | null = null
   if (parentId !== undefined) {
-    const [p] = await db.select({ id: comments.id, parentId: comments.parentId }).from(comments).where(and(eq(comments.id, parentId), eq(comments.chapterId, chapterId)))
+    const [p] = await db.select({ id: comments.id, parentId: comments.parentId, userId: comments.userId }).from(comments).where(and(eq(comments.id, parentId), eq(comments.chapterId, chapterId)))
     if (!p) return status(404, { error: 'ไม่พบความคิดเห็นที่จะตอบ' })
     parent = p.parentId ?? p.id // replies stay one level deep: answering a reply lands in the same thread
+    answered = p.userId
   }
   const [c] = await db.insert(comments).values({ storyId, chapterId, userId: me.id, parentId: parent, body }).returning({ id: comments.id })
+  if (answered !== null && answered !== me.id) await db.insert(notifications).values({ userId: answered, type: 'reply', actorId: me.id, commentId: c.id }) // whoever was answered hears about it
   return c
 }
 
@@ -198,8 +203,12 @@ async function voteComment(commentId: number, value: -1 | 0 | 1, me: { id: numbe
   if (!c) return status(404, { error: 'ไม่พบข้อมูล' })
   if (c.userId === me.id) return status(403, { error: 'โหวตความคิดเห็นของตัวเองไม่ได้' })
   if (limited(`vote:${me.id}`, 60, 10 * 60_000)) return status(429, { error: 'โหวตบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+  const [before] = await db.select({ value: commentVotes.value }).from(commentVotes).where(and(eq(commentVotes.commentId, commentId), eq(commentVotes.userId, me.id)))
   if (value === 0) await db.delete(commentVotes).where(and(eq(commentVotes.commentId, commentId), eq(commentVotes.userId, me.id)))
   else await db.insert(commentVotes).values({ commentId, userId: me.id, value }).onConflictDoUpdate({ target: [commentVotes.commentId, commentVotes.userId], set: { value } })
+  // a new upvote tells the author (one row per comment, shown again as unread); voters stay anonymous and downvotes are not announced
+  if (value === 1 && before?.value !== 1) await db.insert(notifications).values({ userId: c.userId, type: 'vote', commentId })
+    .onConflictDoUpdate({ target: [notifications.userId, notifications.type, notifications.commentId], set: { readAt: null, createdAt: sql`now()` } })
   const [{ score }] = await db.select({ score: sql<number>`coalesce(sum(${commentVotes.value}), 0)::int` }).from(commentVotes).where(eq(commentVotes.commentId, commentId))
   return { score, myVote: value || null }
 }
@@ -238,12 +247,37 @@ const commentRoutes = new Elysia()
   .post('/stories/:id/chapters/:no/comments', ({ params, body, me }) => addComment(params.id, params.no, body.body, body.parentId, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), body: t.Object({ body: t.String({ maxLength: COMMENT_MAX }), parentId: t.Optional(t.Integer()) }), ...userOnly })
   .put('/comments/:id/vote', ({ params, body, me }) => voteComment(params.id, body.value, me!), { ...id, body: t.Object({ value: t.Union([t.Literal(-1), t.Literal(0), t.Literal(1)]) }), ...userOnly })
   .delete('/comments/:id', async ({ params, me }) => {
-    const [c] = await db.select({ userId: comments.userId, storyAuthor: stories.authorId }).from(comments).innerJoin(stories, eq(stories.id, comments.storyId)).where(eq(comments.id, params.id))
+    const [c] = await db.select({ userId: comments.userId, body: comments.body, storyAuthor: stories.authorId }).from(comments).innerJoin(stories, eq(stories.id, comments.storyId)).where(eq(comments.id, params.id))
     if (!c) return status(404, { error: 'ไม่พบข้อมูล' })
     if (me!.role !== 'admin' && me!.id !== c.userId && me!.id !== c.storyAuthor) return status(403, { error: 'ลบได้เฉพาะความคิดเห็นของตัวเอง' })
-    await db.delete(comments).where(eq(comments.id, params.id))
+    await db.transaction(async tx => {
+      await tx.delete(comments).where(eq(comments.id, params.id))
+      // removing somebody else's comment (admin or story author) is written down; deleting your own is not
+      if (me!.id !== c.userId) await tx.insert(auditLog).values({ actorId: me!.id, action: 'comment_delete', targetId: c.userId, detail: c.body.replace(/\s+/g, ' ').slice(0, 120) })
+    })
     return { ok: true }
   }, { ...id, ...userOnly })
+  // only the author of a comment can change its text
+  .patch('/comments/:id', async ({ params, body, me }) => {
+    const text = body.body.trim()
+    if (!text) return status(422, { error: 'พิมพ์ข้อความก่อน' })
+    const [c] = await db.select({ userId: comments.userId }).from(comments).where(eq(comments.id, params.id))
+    if (!c) return status(404, { error: 'ไม่พบข้อมูล' })
+    if (c.userId !== me!.id) return status(403, { error: 'แก้ไขได้เฉพาะความคิดเห็นของตัวเอง' })
+    if (limited(`comment:${me!.id}`, 10, 10 * 60_000)) return status(429, { error: 'ส่งบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+    await db.update(comments).set({ body: text, editedAt: sql`now()` }).where(eq(comments.id, params.id))
+    return { ok: true }
+  }, { ...id, body: t.Object({ body: t.String({ maxLength: COMMENT_MAX }) }), ...userOnly })
+  .post('/comments/:id/report', async ({ params, body, me }) => {
+    const [c] = await db.select({ userId: comments.userId }).from(comments).where(eq(comments.id, params.id))
+    if (!c) return status(404, { error: 'ไม่พบข้อมูล' })
+    if (c.userId === me!.id) return status(403, { error: 'รายงานความคิดเห็นของตัวเองไม่ได้' })
+    if (limited(`report:${me!.id}`, 10, 60 * 60_000)) return status(429, { error: 'รายงานบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+    // reporting again (e.g. after a dismissal) re-opens it with the new reason
+    await db.insert(commentReports).values({ commentId: params.id, reporterId: me!.id, reason: body.reason?.trim() ?? '' })
+      .onConflictDoUpdate({ target: [commentReports.commentId, commentReports.reporterId], set: { reason: body.reason?.trim() ?? '', resolvedAt: null, createdAt: sql`now()` } })
+    return { ok: true }
+  }, { ...id, body: t.Object({ reason: t.Optional(t.String({ maxLength: 300 })) }), ...userOnly })
   .get('/stories/:id/reviews', ({ params, query, me }) => listReviews(params.id, query, me), { ...id, query: pageQuery })
   .put('/stories/:id/reviews', ({ params, body, me }) => saveReview(params.id, body.rating, body.body ?? '', me!), { ...id, body: t.Object({ rating: t.Integer({ minimum: 1, maximum: 5 }), body: t.Optional(t.String({ maxLength: REVIEW_MAX })) }), ...userOnly })
   // the story's author cannot remove reviews of their own story (that would hide criticism); the reviewer and admins can
@@ -259,6 +293,19 @@ const commentRoutes = new Elysia()
 // only chapters readers can see may be recorded, which also keeps the story foreign key valid
 const isLive = async (storyId: number, no: number) => !!(await db.select({ id: chapters.id }).from(chapters).innerJoin(stories, eq(stories.id, chapters.storyId))
   .where(and(eq(chapters.storyId, storyId), eq(chapters.no, no), visible, eq(stories.published, true))))[0]
+
+// Followed stories with chapters that went live after the reader followed and that they have not read, one row per story.
+// `fresh` = something was released since the reader last opened the notifications page (that is what the bell counts).
+async function newChapterStories(userId: number) {
+  return db.select({
+    storyId: stories.id, storyTitle: stories.title, count: sql<number>`count(*)::int`, firstNo: sql<number>`min(${chapters.no})::int`,
+    at: sql<string>`max(${chapters.releasedAt})`, fresh: sql<boolean>`bool_or(${chapters.releasedAt} > coalesce(${users.notificationsSeenAt}, 'epoch'::timestamp))`,
+  }).from(bookmarks).innerJoin(users, eq(users.id, bookmarks.userId)).innerJoin(stories, and(eq(stories.id, bookmarks.storyId), eq(stories.published, true)))
+    .innerJoin(chapters, eq(chapters.storyId, stories.id))
+    .where(and(eq(bookmarks.userId, userId), visible, sql`${chapters.releasedAt} > ${bookmarks.createdAt}`,
+      sql`not exists (select 1 from chapter_reads cr where cr.user_id = ${userId} and cr.story_id = chapters.story_id and cr.no = chapters.no)`))
+    .groupBy(stories.id, stories.title, users.notificationsSeenAt)
+}
 
 // Signed-in readers: where they stopped in each story, and which chapters they have finished
 const meRoutes = new Elysia({ prefix: '/me' })
@@ -295,6 +342,30 @@ const meRoutes = new Elysia({ prefix: '/me' })
       readCount: sql<number>`(select count(*)::int from chapter_reads cr join chapters on chapters.story_id = cr.story_id and chapters.no = cr.no where cr.user_id = ${me!.id} and cr.story_id = stories.id and ${visibleSql})`,
     }).from(bookmarks).innerJoin(stories, eq(stories.id, bookmarks.storyId)).innerJoin(users, eq(users.id, stories.authorId))
       .where(and(eq(bookmarks.userId, me!.id), eq(stories.published, true))).orderBy(desc(bookmarks.createdAt)))
+    // The bell: replies and upvotes on the reader's comments (stored rows), plus followed stories that have chapters the reader has not read yet.
+    // Those chapter items are worked out on the fly, not stored, so a scheduled (drip) chapter shows up exactly when it goes live and
+    // disappears once it is read. Opening the page marks the rest read (POST /notifications/read).
+    .get('/notifications', async ({ me }) => {
+      const stored = (await db.select({
+        id: notifications.id, type: notifications.type, readAt: notifications.readAt, createdAt: notifications.createdAt, actor: users.name,
+        body: comments.body, storyId: comments.storyId, storyTitle: stories.title, no: chapters.no, score: scoreSql,
+      }).from(notifications).innerJoin(comments, eq(comments.id, notifications.commentId)).innerJoin(stories, eq(stories.id, comments.storyId)).innerJoin(chapters, eq(chapters.id, comments.chapterId))
+        .leftJoin(users, eq(users.id, notifications.actorId)).where(eq(notifications.userId, me!.id)).orderBy(desc(notifications.createdAt)).limit(50))
+        .map(({ id, readAt, body, ...n }) => ({ ...n, key: `n${id}`, count: 1, unread: readAt === null, snippet: body.replace(/\s+/g, ' ').slice(0, 140) }))
+      const chaptersDue = (await newChapterStories(me!.id))
+        .map(c => ({ key: `c${c.storyId}`, type: 'chapter' as 'reply' | 'vote' | 'chapter', createdAt: new Date(c.at.replace(' ', 'T') + 'Z'), actor: null as string | null, storyId: c.storyId, storyTitle: c.storyTitle, no: c.firstNo, score: 0, count: c.count, unread: c.fresh, snippet: '' }))
+      return [...stored.map(n => ({ ...n, type: n.type as 'reply' | 'vote' | 'chapter' })), ...chaptersDue].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 50)
+    })
+    .get('/notifications/count', async ({ me }) => {
+      // polled every minute by the bell; a user follows few stories, so the chapter query stays small
+      const stored = await db.$count(notifications, and(eq(notifications.userId, me!.id), isNull(notifications.readAt)))
+      return { unread: stored + (await newChapterStories(me!.id)).filter(c => c.fresh).length }
+    })
+    .post('/notifications/read', async ({ me }) => {
+      await db.update(notifications).set({ readAt: sql`now()` }).where(and(eq(notifications.userId, me!.id), isNull(notifications.readAt)))
+      await db.update(users).set({ notificationsSeenAt: sql`now()` }).where(eq(users.id, me!.id))
+      return { ok: true }
+    })
     .put('/bookmarks/:id', async ({ params, me, status }) => {
       if (!(await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true } }))) return status(404, { error: 'ไม่พบข้อมูล' })
       await db.insert(bookmarks).values({ userId: me!.id, storyId: params.id }).onConflictDoNothing()
@@ -342,6 +413,24 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
         .from(auditLog).leftJoin(actor, eq(actor.id, auditLog.actorId)).leftJoin(target, eq(target.id, auditLog.targetId)).orderBy(desc(auditLog.id)).limit(50)
     })
     .get('/usage', async () => ({ spent: await monthSpent(), budget: budget() }))
+    // open reports, one entry per reported comment (several readers may flag the same one), most recently reported first
+    .get('/reports', async () => {
+      const reporter = alias(users, 'reporter'), author = alias(users, 'author')
+      const rows = await db.select({
+        commentId: commentReports.commentId, reason: commentReports.reason, reportedAt: commentReports.createdAt, reporter: reporter.name,
+        body: comments.body, authorId: comments.userId, author: author.name, storyId: comments.storyId, storyTitle: stories.title, no: chapters.no,
+      }).from(commentReports).innerJoin(comments, eq(comments.id, commentReports.commentId)).innerJoin(stories, eq(stories.id, comments.storyId)).innerJoin(chapters, eq(chapters.id, comments.chapterId))
+        .innerJoin(reporter, eq(reporter.id, commentReports.reporterId)).innerJoin(author, eq(author.id, comments.userId))
+        .where(isNull(commentReports.resolvedAt)).orderBy(desc(commentReports.createdAt))
+      const byComment = new Map<number, { commentId: number; body: string; authorId: number; author: string; storyId: number; storyTitle: string; no: number; reports: { reporter: string; reason: string; reportedAt: Date }[] }>()
+      for (const { commentId, reason, reportedAt, reporter, ...c } of rows) {
+        const e = byComment.get(commentId) ?? { commentId, ...c, reports: [] }
+        e.reports.push({ reporter, reason, reportedAt }); byComment.set(commentId, e)
+      }
+      return [...byComment.values()]
+    })
+    // "no problem here": closes every open report of that comment (deleting the comment closes them too, by cascade)
+    .post('/reports/:id/dismiss', async ({ params }) => { await db.update(commentReports).set({ resolvedAt: sql`now()` }).where(and(eq(commentReports.commentId, params.id), isNull(commentReports.resolvedAt))); return { ok: true } }, id)
   )
 
   // admins and writers; a writer only reaches their own stories (see ownStory in auth.ts)
@@ -445,10 +534,14 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       const { publishAt, ...rest } = body
       const at = publishAt ? new Date(publishAt) : null
       if (at && isNaN(at.getTime())) return status(422, { error: 'เวลาเผยแพร่ไม่ถูกต้อง' })
-      const before = body.content === undefined && body.title === undefined ? null : await db.query.chapters.findFirst({ where: eq(chapters.id, params.id) })
+      const before = await db.query.chapters.findFirst({ where: eq(chapters.id, params.id) })
       // the text about to be overwritten is kept as a version, so this is never a one-way trip
       if (before && ((body.content !== undefined && body.content !== before.content) || (body.title !== undefined && body.title !== before.title))) await snapshot(before)
-      const [row] = await db.update(chapters).set({ ...rest, ...(publishAt !== undefined ? { publishAt: at } : body.published ? { publishAt: null } : {}) }).where(eq(chapters.id, params.id)).returning()
+      const schedule = publishAt !== undefined ? { publishAt: at } : body.published ? { publishAt: null } : {}
+      // releasedAt follows publish state and schedule (see release.ts); text-only edits leave it alone
+      const touchesRelease = body.published !== undefined || publishAt !== undefined
+      const releasedAt = before && touchesRelease ? releasedAtFor(before, { published: body.published ?? before.published, publishAt: 'publishAt' in schedule ? schedule.publishAt ?? null : before.publishAt }) : undefined
+      const [row] = await db.update(chapters).set({ ...rest, ...schedule, ...(releasedAt !== undefined && { releasedAt }) }).where(eq(chapters.id, params.id)).returning()
       if (before && row && body.content !== undefined) { const keep = new Set(imageNames(row.content)); await pruneUnused(imageNames(before.content).filter(n => !keep.has(n))) }
       return row ?? status(404, { error: 'ไม่พบข้อมูล' })
     }, { ...id, body: t.Partial(t.Object({ title: t.String(), content: t.String(), summary: t.String(), published: t.Boolean(), publishAt: t.Union([t.String(), t.Null()]) })) })
@@ -457,7 +550,11 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
     .post('/chapters/:id/restore/:version', async ({ params, status }) => (await restore(params.id, params.version)) ?? status(404, { error: 'ไม่พบข้อมูล' }), { params: t.Object({ id: t.Numeric(), version: t.Numeric() }) })
     // publish / hide several chapters of one story at once
     .patch('/stories/:id/chapters', async ({ params, body }) => {
-      const rows = await db.update(chapters).set({ published: body.published, ...(body.published && { publishAt: null }) })
+      // releasedAt: hidden = none; live = now, unless it already was live right away (then it keeps its time). Right-hand `chapters.*` are the values before this update.
+      const released = body.published
+        ? sql`case when ${chapters.published} and ${chapters.publishAt} is null and ${chapters.releasedAt} is not null then ${chapters.releasedAt} else now() end`
+        : null
+      const rows = await db.update(chapters).set({ published: body.published, releasedAt: released, ...(body.published && { publishAt: null }) })
         .where(and(eq(chapters.storyId, params.id), inArray(chapters.id, body.ids))).returning({ id: chapters.id })
       return { updated: rows.length }
     }, { ...id, body: t.Object({ ids: t.Array(t.Integer(), { minItems: 1 }), published: t.Boolean() }) })

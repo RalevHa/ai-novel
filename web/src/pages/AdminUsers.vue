@@ -99,12 +99,13 @@ const badge = (r: RoleKey) => ['rounded-full px-2 py-0.5 text-[11px]', r === 'ad
   <Pager v-if="data" v-model="page" :size="data.size" :total="data.total" />
 
   <details class="mt-10">
-    <summary class="cursor-pointer select-none font-medium">ประวัติการเปลี่ยนสิทธิ์<span class="muted ml-2 text-sm font-normal">({{ log.length }}<template v-if="log.length >= 50">+</template>)</span></summary>
-    <p v-if="!log.length" class="muted mt-3 text-sm">ยังไม่มีการเปลี่ยนสิทธิ์</p>
+    <summary class="cursor-pointer select-none font-medium">ประวัติการจัดการ<span class="muted ml-2 text-sm font-normal">({{ log.length }}<template v-if="log.length >= 50">+</template>)</span></summary>
+    <p v-if="!log.length" class="muted mt-3 text-sm">ยังไม่มีรายการ</p>
     <ul v-else class="mt-3 divide-y divide-line rounded-xl border border-line bg-surface text-sm">
       <li v-for="l in log" :key="l.id" class="flex flex-wrap gap-x-3 gap-y-1 p-3">
         <span class="muted w-full sm:w-auto">{{ fmtDateTime(l.createdAt) }}</span>
-        <span><b>{{ l.actor ?? 'ไม่ทราบ' }}</b> เปลี่ยนสิทธิ์ของ <b>{{ l.target ?? 'ไม่ทราบ' }}</b>: {{ l.detail.split(' → ').map(roleName).join(' → ') }}</span>
+        <span v-if="l.action === 'comment_delete'"><b>{{ l.actor ?? 'ไม่ทราบ' }}</b> ลบความคิดเห็นของ <b>{{ l.target ?? 'ไม่ทราบ' }}</b>: <span class="muted">“{{ l.detail }}”</span></span>
+        <span v-else><b>{{ l.actor ?? 'ไม่ทราบ' }}</b> เปลี่ยนสิทธิ์ของ <b>{{ l.target ?? 'ไม่ทราบ' }}</b>: {{ l.detail.split(' → ').map(roleName).join(' → ') }}</span>
       </li>
     </ul>
   </details>

@@ -94,7 +94,7 @@ async function startReading(storyId: number, chapterNo: number) {
   const doc = document.documentElement
   const saved = await getPos(storyId, chapterNo)
   if (storyId !== sid() || chapterNo !== no.value) return // the reader moved on while we waited
-  if (saved >= RESTORE_MIN && saved < FINISHED) {
+  if (saved >= RESTORE_MIN && saved < FINISHED && route.query.comments !== '1') { // coming from a notification: the comments are the destination, not the old position
     const apply = () => scrollTo(0, scrollTarget(saved, doc.scrollHeight, doc.clientHeight))
     apply()
     resumed.value = true; notice = setTimeout(() => { resumed.value = false }, 7000)
@@ -245,7 +245,7 @@ onBeforeUnmount(() => {
     </nav>
     <p v-if="!next" class="muted mt-4 text-center text-xs">นี่คือตอนล่าสุด</p>
     <p class="muted mt-1 hidden text-center text-xs md:block">ใช้ปุ่มลูกศรซ้ายและขวาบนคีย์บอร์ดเพื่อเปลี่ยนตอน</p>
-    <CommentSection :story-id="Number(id)" :no="no" collapsible />
+    <CommentSection :key="`${id}-${no}`" :story-id="Number(id)" :no="no" collapsible :auto-open="route.query.comments === '1'" />
   </div>
 
   <button v-if="showTop" type="button" class="fixed bottom-20 right-4 z-40 grid size-11 place-items-center rounded-full border border-line bg-surface shadow-lg md:bottom-6" aria-label="กลับขึ้นบน" @click="backToTop"><ArrowUp class="size-5" /></button>

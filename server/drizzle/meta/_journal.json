@@ -71,6 +71,20 @@
       "when": 1791339348089,
       "tag": "0009_comment_replies_votes",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791341680811,
+      "tag": "0010_notifications_reports_edits",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791341946321,
+      "tag": "0011_chapter_release_seen",
+      "breakpoints": true
     }
   ]
 }
