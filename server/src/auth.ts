@@ -24,9 +24,9 @@ export const auth = new Elysia({ name: 'auth' })
   .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET!, exp: '30d' }))
   .derive({ as: 'global' }, async ({ jwt, cookie: { token } }) => {
     const p = token.value ? await jwt.verify(token.value as string) : false
-    // role comes from the DB, not the token: demoting or deleting a user takes effect on their next request
-    const u = p && (await db.select({ role: users.role, changed: sql<number>`coalesce(extract(epoch from ${users.passwordChangedAt}), 0)::float8` }).from(users).where(eq(users.id, Number(p.sub))))[0]
-    return { me: p && u && !issuedBeforeChange(p.iat, u.changed) ? { id: Number(p.sub), role: u.role as Role } : null }
+    // role comes from the DB, not the token: demoting, suspending or deleting a user takes effect on their next request
+    const u = p && (await db.select({ role: users.role, suspended: users.suspendedAt, changed: sql<number>`coalesce(extract(epoch from ${users.passwordChangedAt}), 0)::float8` }).from(users).where(eq(users.id, Number(p.sub))))[0]
+    return { me: p && u && !u.suspended && !issuedBeforeChange(p.iat, u.changed) ? { id: Number(p.sub), role: u.role as Role } : null }
   })
 
 // status() (not set.status) keeps the error out of the success response type that Eden infers

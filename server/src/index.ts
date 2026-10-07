@@ -80,6 +80,7 @@ const authRoutes = new Elysia({ prefix: '/auth' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email) })
     if (!u || !(await Bun.password.verify(body.password, u.passwordHash))) return status(401, { error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
     forgive(key)
+    if (u.suspendedAt) return status(403, { error: 'บัญชีนี้ถูกระงับ ติดต่อผู้ดูแลระบบหากคิดว่าเป็นความผิดพลาด' })
     if (!u.emailVerifiedAt) {
       await sendCode(u, 'verify', u.email).catch(e => console.error('verify mail failed', e)) // the web then opens the code page; "send again" is there if this failed
       return status(403, { error: 'ยังไม่ได้ยืนยันอีเมล เราส่งรหัสไปให้แล้ว', needsVerify: true as const, email: u.email })
@@ -518,7 +519,7 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
       const where = and(like ? or(ilike(users.name, like), ilike(users.email, like)) : undefined, query.role ? eq(users.role, query.role) : undefined)
       const total = await db.$count(users, where)
       const { page, size, offset } = paging(query, total, 'first', 20)
-      const items = await db.select({ ...publicUser, storyCount: sql<number>`(select count(*)::int from stories where stories.author_id = users.id)` })
+      const items = await db.select({ ...publicUser, suspendedAt: users.suspendedAt, storyCount: sql<number>`(select count(*)::int from stories where stories.author_id = users.id)` })
         .from(users).where(where).orderBy(desc(users.id)).limit(size).offset(offset)
       const byRole = await db.select({ role: users.role, n: sql<number>`count(*)::int` }).from(users).groupBy(users.role)
       const n = (r: string) => byRole.find(x => x.role === r)?.n ?? 0
@@ -536,6 +537,19 @@ const adminRoutes = new Elysia({ prefix: '/admin' })
         return u
       })
     }, { ...id, body: t.Object({ role: t.Union([t.Literal('admin'), t.Literal('writer'), t.Literal('user')]) }) })
+    // suspending stops sign-in and kills existing sessions (see auth.ts) but keeps everything the person wrote; an admin has to be demoted first, so nobody can lock the admins out
+    .patch('/users/:id/suspend', async ({ params, body, me, status }) => {
+      if (params.id === me!.id) return status(400, { error: 'ระงับบัญชีตัวเองไม่ได้' })
+      return db.transaction(async tx => {
+        const [before] = await tx.select({ role: users.role, suspendedAt: users.suspendedAt }).from(users).where(eq(users.id, params.id))
+        if (!before) return status(404, { error: 'ไม่พบข้อมูล' })
+        if (before.role === 'admin') return status(403, { error: 'ระงับแอดมินไม่ได้ ให้ลดสิทธิ์ก่อน' })
+        if (!!before.suspendedAt === body.suspended) return status(409, { error: body.suspended ? 'บัญชีนี้ถูกระงับอยู่แล้ว' : 'บัญชีนี้ไม่ได้ถูกระงับ' })
+        const [u] = await tx.update(users).set({ suspendedAt: body.suspended ? sql`now()` : null }).where(eq(users.id, params.id)).returning({ ...publicUser, suspendedAt: users.suspendedAt })
+        await tx.insert(auditLog).values({ actorId: me!.id, action: body.suspended ? 'suspend' : 'unsuspend', targetId: u.id, detail: '' })
+        return u
+      })
+    }, { ...id, body: t.Object({ suspended: t.Boolean() }) })
     .get('/audit', () => {
       const actor = alias(users, 'actor'), target = alias(users, 'target')
       return db.select({ id: auditLog.id, action: auditLog.action, detail: auditLog.detail, createdAt: auditLog.createdAt, actor: actor.name, target: target.name })
