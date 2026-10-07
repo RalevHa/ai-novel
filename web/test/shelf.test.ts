@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isRecent, ratingScore, shelf, type ShelfStory } from '../src/shelf'
+import { allTags, isRecent, ratingScore, shelf, type ShelfStory } from '../src/shelf'
 
 const s = (id: number, title: string, o: Partial<ShelfStory> = {}): ShelfStory => ({ id, title, chapterCount: 1, createdAt: `2026-09-0${id} 10:00:00`, updatedAt: `2026-09-0${id} 10:00:00`, ...o })
 const all = [
@@ -48,4 +48,11 @@ test('isRecent: within 24 h, not older, not far in the future, never for null', 
   expect(isRecent('2026-10-05 11:00:00', now)).toBe(false) // 25 h ago
   expect(isRecent('2026-10-07 12:00:00', now)).toBe(false)
   expect(isRecent(null, now)).toBe(false)
+})
+
+test('shelf: a genre field with several comma-separated tags matches each tag, case-insensitively', () => {
+  const tagged = [s(1, 'A', { genre: 'Isekai, Slice of Life' }), s(2, 'B', { genre: 'slice of life' }), s(3, 'C', { genre: 'Romance' })]
+  expect(allTags(tagged)).toEqual(['Isekai', 'Slice of Life', 'Romance'])
+  expect(ids(shelf(tagged, { q: '', genre: 'Slice of Life', sort: 'newest' })).sort()).toEqual([1, 2])
+  expect(ids(shelf(tagged, { q: '', genre: 'Isekai', sort: 'newest' }))).toEqual([1])
 })

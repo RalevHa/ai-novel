@@ -8,7 +8,7 @@ import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { fmtDate, parseDb } from '../genre'
 import { lsGet, lsSet } from '../ls'
-import { isRecent, shelf, SORTS, type Sort } from '../shelf'
+import { allTags, isRecent, shelf, SORTS, type Sort } from '../shelf'
 import { useAuth } from '../stores/auth'
 import { useBookmarks } from '../stores/bookmarks'
 
@@ -18,7 +18,7 @@ const load = () => ok(client.api.stories.get())
 type Story = Awaited<ReturnType<typeof load>>[number]
 const stories = ref<Story[]>([]), loading = ref(true), error = ref(''), genre = ref<string | null>(null)
 
-const genres = computed(() => [...new Set(stories.value.map(s => s.genre).filter(Boolean))])
+const genres = computed(() => allTags(stories.value))
 // search + order are applied in the browser (the shelf is not paginated); the order is remembered
 const query = ref(''), sort = ref<Sort>(SORTS.some(x => x.k === lsGet('homeSort')) ? lsGet('homeSort') as Sort : 'updated')
 watch(sort, v => lsSet('homeSort', v))

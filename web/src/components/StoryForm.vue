@@ -28,7 +28,7 @@ const STATUSES = [{ k: 'ongoing', n: 'กำลังเขียน' }, { k: 'c
     <Input v-model="f.title" label="ชื่อเรื่อง" required />
     <Textarea v-model="f.synopsis" label="เรื่องย่อ (ผู้อ่านเห็น)" :rows="3" />
     <div class="grid gap-x-4 sm:grid-cols-2">
-      <Input v-model="f.genre" label="แนว" placeholder="เช่น Isekai, Slice of Life" />
+      <Input v-model="f.genre" label="แนว" placeholder="ใส่ได้หลายแนว คั่นด้วย , เช่น Isekai, Slice of Life" />
       <Input v-model="f.mood" label="ความรู้สึกที่ต้องการ" placeholder="เช่น อบอุ่นหัวใจ" />
     </div>
     <Textarea v-model="f.premise" label="พล็อต / ตัวละครตั้งต้น (ส่งให้ AI เท่านั้น)" :rows="4" />

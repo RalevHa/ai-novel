@@ -19,6 +19,16 @@ export const ratingScore = (s: { rating?: number | null; ratingCount?: number })
   return n && s.rating ? (s.rating * n + 3.5 * 2) / (n + 2) : 0
 }
 
+/** A story's genre field holds one or more tags separated by commas ("Isekai, Slice of Life"). */
+export const genreTags = (genre = '') => genre.split(/[,،、]/).map(t => t.trim()).filter(Boolean)
+
+/** Distinct tags across stories, case-insensitive ("isekai" and "Isekai" are one chip), first spelling wins. */
+export const allTags = (stories: { genre?: string }[]) => {
+  const seen = new Map<string, string>()
+  for (const t of stories.flatMap(s => genreTags(s.genre))) if (!seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t)
+  return [...seen.values()]
+}
+
 /** Stories matching the text, genre and (optionally) an id whitelist, in the chosen order. Does not touch the input. */
 export function shelf<T extends ShelfStory>(all: T[], o: { q: string; genre: string | null; sort: Sort; ids?: Set<number> | null }): T[] {
   const q = o.q.trim().toLowerCase()
@@ -30,7 +40,7 @@ export function shelf<T extends ShelfStory>(all: T[], o: { q: string; genre: str
     chapters: (a, b) => b.chapterCount - a.chapterCount || updated(b) - updated(a),
     rating: (a, b) => ratingScore(b) - ratingScore(a) || (b.ratingCount ?? 0) - (a.ratingCount ?? 0) || updated(b) - updated(a),
   }
-  return all.filter(s => (!o.genre || s.genre === o.genre) && (!o.ids || o.ids.has(s.id)) && hit(s)).sort(order[o.sort])
+  return all.filter(s => (!o.genre || genreTags(s.genre).some(t => t.toLowerCase() === o.genre!.toLowerCase())) && (!o.ids || o.ids.has(s.id)) && hit(s)).sort(order[o.sort])
 }
 
 /** Updated within the last `hours` (the "new chapter" badge). */
