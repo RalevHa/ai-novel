@@ -120,6 +120,13 @@
       "when": 1791359069426,
       "tag": "0016_password_changed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791359730274,
+      "tag": "0017_reader_prefs",
+      "breakpoints": true
     }
   ]
 }

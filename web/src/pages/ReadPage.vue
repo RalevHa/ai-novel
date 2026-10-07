@@ -18,6 +18,7 @@ import { RATES, useSpeech } from '../tts'
 import { toast } from '../toast'
 import { renderChapter } from '../markdown'
 import { lsGet, lsSet } from '../ls'
+import { savePrefs } from '../prefs'
 import { setTheme, theme, THEMES, type ThemeName } from '../theme'
 
 const route = useRoute(), router = useRouter()
@@ -32,15 +33,15 @@ const loading = ref(true), error = ref(''), progress = ref(0)
 
 const size = ref(Number(lsGet('fontSize')) || 19)
 const face = ref<'serif' | 'sans'>(lsGet('fontFace') === 'sans' ? 'sans' : 'serif')
-watch(size, v => lsSet('fontSize', String(v)))
-watch(face, v => lsSet('fontFace', v))
+watch(size, v => { lsSet('fontSize', String(v)); savePrefs() })
+watch(face, v => { lsSet('fontFace', v); savePrefs() })
 const faces = [{ k: 'serif', n: 'มีหัว' }, { k: 'sans', n: 'ไม่มีหัว' }] as const
 // text column width and line spacing, remembered like the font settings
 const stored = <T extends string>(key: string, ok: (v: string) => boolean, fallback: T) => { const v = lsGet(key); return v && ok(v) ? v as T : fallback }
 const measure = ref<Measure>(stored('readerWidth', v => v in MEASURES, 'normal'))
 const leading = ref<Leading>(stored('readerLeading', v => ['tight', 'normal', 'loose'].includes(v), 'normal'))
-watch(measure, v => lsSet('readerWidth', v))
-watch(leading, v => lsSet('readerLeading', v))
+watch(measure, v => { lsSet('readerWidth', v); savePrefs() })
+watch(leading, v => { lsSet('readerLeading', v); savePrefs() })
 
 const idx = computed(() => nos.value.indexOf(no.value))
 const prev = computed(() => idx.value > 0 ? nos.value[idx.value - 1] : null)
