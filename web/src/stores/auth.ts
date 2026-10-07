@@ -16,7 +16,7 @@ export const useAuth = defineStore('auth', {
       this.user = await ok(client.api.auth.login.post({ email, password }))
     },
     async register(email: string, name: string, password: string) {
-      this.user = await ok(client.api.auth.register.post({ email, name, password }))
+      this.user = await ok(client.api.auth.register.post({ email, name, password, acceptTerms: true }))
     },
     async logout() {
       await ok(client.api.auth.logout.post())
