@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { aiHeaders } from '../aiKey'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { EllipsisVertical, Eye, EyeOff, ImagePlus, Pencil, Plus, Sparkles, Trash2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
@@ -75,7 +76,7 @@ async function suggest() {
   const run = ++suggestRun
   suggestOpen.value = true; suggesting.value = true; found.value = []
   try {
-    const r = await ok(client.api.admin.stories({ id: props.storyId }).characters.suggest.post())
+    const r = await ok(client.api.admin.stories({ id: props.storyId }).characters.suggest.post(undefined, { headers: aiHeaders() }))
     if (run === suggestRun) found.value = r.suggestions.map(s => ({ ...s, pick: true }))
   } catch (e) { if (run === suggestRun) { suggestOpen.value = false; toastError(e) } }
   finally { if (run === suggestRun) suggesting.value = false }

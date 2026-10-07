@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { aiHeaders, hasAiKey } from '../aiKey'
 import { useAuth } from '../stores/auth'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { ArrowLeft, Eye, EyeOff, EllipsisVertical, Pencil, Sparkles, Square, Trash2 } from 'lucide-vue-next'
@@ -92,7 +93,7 @@ const check = ref({ report: '', busy: false })
 async function runCheck() {
   if (!edit.value) return
   check.value = { report: '', busy: true }
-  try { check.value.report = (await ok(client.api.admin.chapters({ id: edit.value.id }).check.post())).report; loadUsage() }
+  try { check.value.report = (await ok(client.api.admin.chapters({ id: edit.value.id }).check.post(undefined, { headers: aiHeaders() }))).report; loadUsage() }
   catch (e) { toastError(e) } finally { check.value.busy = false }
 }
 
@@ -109,7 +110,7 @@ async function rewrite() {
   try {
     const r = await fetch(`/api/admin/chapters/${edit.value.id}/rewrite`, {
       method: 'POST', credentials: 'include', signal: rwCtrl.signal,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...aiHeaders() },
       body: JSON.stringify({ model: rw.value.model, instruction: rw.value.note }),
     })
     if (!r.ok || !r.body) throw new Error((await r.text()) || `HTTP ${r.status}`)
@@ -149,8 +150,7 @@ async function goto(p: number) {
 onMounted(refresh)
 // a writer needs their own OpenRouter key before any AI button works (admins can use the site's)
 const auth = useAuth()
-const noAiKey = ref(false)
-onMounted(async () => { if (!auth.isAdmin) { try { noAiKey.value = !(await ok(client.api.me['ai-key'].get())).canUseAi } catch { /* no banner */ } } })
+const noAiKey = computed(() => !auth.isAdmin && !hasAiKey.value)
 onBeforeUnmount(() => { removeEventListener('beforeunload', warnUnload); ctrl?.abort(); rwCtrl?.abort() })
 
 async function saveStory(body: StoryInput) {
@@ -192,7 +192,7 @@ async function removeChapter() {
 
 // AI recap of one chapter (the AI reads these as memory when writing the next chapters)
 async function summarize(c: { id: number }) {
-  const r = await ok(client.api.admin.chapters({ id: c.id }).summarize.post())
+  const r = await ok(client.api.admin.chapters({ id: c.id }).summarize.post(undefined, { headers: aiHeaders() }))
   return r.summary
 }
 async function summarizeEdit() {
@@ -220,7 +220,7 @@ async function generateOne() {
   out.value = ''
   const r = await fetch(`/api/admin/stories/${id}/generate`, {
     method: 'POST', credentials: 'include', signal: ctrl!.signal,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...aiHeaders() },
     body: JSON.stringify({ instruction: instruction.value, fromOutline: fromOutline.value }),
   })
   if (!r.ok || !r.body) throw new Error((await r.text()) || `HTTP ${r.status}`)

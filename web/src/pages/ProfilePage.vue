@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
+import { aiKeyLast4, clearAiKey, hasAiKey, setAiKey } from '../aiKey'
 import { client, ok } from '../api'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
 import Textarea from '../components/ui/Textarea.vue'
-import { fmtDate } from '../genre'
 import { useAuth } from '../stores/auth'
 import { toast, toastError } from '../toast'
 
@@ -14,20 +14,17 @@ const name = ref(auth.user!.name), bio = ref(auth.user!.bio ?? '')
 const current = ref(''), next = ref('')
 const busy = ref(false)
 
-// a writer's own OpenRouter key: the server stores it encrypted and only ever tells us "set" + the last 4 characters
-const loadKey = () => ok(client.api.me['ai-key'].get())
-const aiKey = ref<Awaited<ReturnType<typeof loadKey>> | null>(null), keyText = ref(''), keyBusy = ref(false), changing = ref(false), confirmRemove = ref(false)
-onMounted(async () => { if (auth.canWrite) { try { aiKey.value = await loadKey() } catch (e) { toastError(e) } } })
+// a writer's own OpenRouter key: kept in this browser only (see aiKey.ts); the server just checks that it works
+const keyText = ref(''), keyBusy = ref(false), changing = ref(false), confirmRemove = ref(false)
 async function saveKey() {
   keyBusy.value = true
-  try { aiKey.value = await ok(client.api.me['ai-key'].put({ key: keyText.value })); keyText.value = ''; changing.value = false; toast('บันทึกคีย์แล้ว') }
-  catch (e) { toastError(e) } finally { keyBusy.value = false }
+  try {
+    await ok(client.api.me['ai-key'].check.post({ key: keyText.value }))
+    setAiKey(keyText.value); keyText.value = ''; changing.value = false
+    toast('บันทึกคีย์ในเบราว์เซอร์นี้แล้ว')
+  } catch (e) { toastError(e) } finally { keyBusy.value = false }
 }
-async function removeKey() {
-  keyBusy.value = true
-  try { aiKey.value = await ok(client.api.me['ai-key'].delete()); confirmRemove.value = false; toast('ลบคีย์แล้ว') }
-  catch (e) { toastError(e) } finally { keyBusy.value = false }
-}
+function removeKey() { clearAiKey(); confirmRemove.value = false; toast('ลบคีย์ออกจากเบราว์เซอร์นี้แล้ว') }
 
 async function save() {
   busy.value = true
@@ -52,27 +49,28 @@ async function save() {
       <Button type="submit" size="lg" class="w-full" :loading="busy">บันทึก</Button>
     </form>
 
-    <section v-if="auth.canWrite && aiKey" class="mt-12 border-t border-line pt-8" aria-labelledby="aikey-h">
+    <section v-if="auth.canWrite" class="mt-12 border-t border-line pt-8" aria-labelledby="aikey-h">
       <h2 id="aikey-h" class="mb-1 font-medium">คีย์ AI ของฉัน (OpenRouter)</h2>
-      <p class="muted mb-4 text-sm">นักเขียนใช้ AI เขียนนิยายด้วยคีย์ OpenRouter ของตัวเอง ค่าใช้จ่ายและเครดิตเป็นของคุณ ไม่ผ่านเว็บนี้ ขอคีย์ได้ที่ <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="text-primary underline underline-offset-2">openrouter.ai/keys</a> แนะนำให้ตั้งวงเงินที่ตัวคีย์ เว็บเก็บคีย์แบบเข้ารหัสและไม่แสดงให้ดูอีก ใช้เพื่อเรียกโมเดลตามคำสั่งของคุณเท่านั้น และลบได้ทุกเมื่อ</p>
-      <p v-if="aiKey.siteKey" class="muted mb-4 text-sm">ผู้ดูแลระบบใช้คีย์ของเว็บได้เมื่อไม่ได้ตั้งคีย์ของตัวเอง ถ้าตั้งคีย์ไว้ที่นี่ ระบบจะใช้คีย์ของคุณก่อน</p>
+      <p class="muted mb-4 text-sm">นักเขียนใช้ AI เขียนนิยายด้วยคีย์ OpenRouter ของตัวเอง ค่าใช้จ่ายและเครดิตเป็นของคุณ ไม่ผ่านเว็บนี้ ขอคีย์ได้ที่ <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="text-primary underline underline-offset-2">openrouter.ai/keys</a> แนะนำให้ตั้งวงเงินที่ตัวคีย์</p>
+      <p class="muted mb-4 text-sm">คีย์<b class="font-medium text-fg">เก็บในเบราว์เซอร์นี้เท่านั้น ไม่ถูกบันทึกบนเซิร์ฟเวอร์</b> แต่จะถูกส่งมากับคำสั่ง AI ทุกครั้ง เซิร์ฟเวอร์จึงเห็นคีย์ชั่วคราวระหว่างทำคำสั่งนั้น (ไม่บันทึกลงฐานข้อมูลหรือล็อก) คีย์จะถูกล้างเมื่อคุณออกจากระบบ ถ้าเปลี่ยนเครื่องหรือล้างข้อมูลเบราว์เซอร์ ต้องกรอกใหม่ ผู้ให้บริการกู้คืนให้ไม่ได้ และอย่ากรอกบนเครื่องสาธารณะ</p>
+      <p v-if="auth.isAdmin" class="muted mb-4 text-sm">ผู้ดูแลระบบใช้คีย์ของเว็บได้เมื่อไม่ได้ตั้งคีย์ของตัวเอง ถ้าตั้งไว้ที่นี่ ระบบจะใช้คีย์ของคุณก่อน</p>
 
-      <div v-if="aiKey.hasKey && !changing" class="rounded-xl border border-line bg-surface p-4">
-        <p class="text-sm">ตั้งคีย์ไว้แล้ว <span class="font-mono">…{{ aiKey.last4 }}</span><template v-if="aiKey.updatedAt"> · เมื่อ {{ fmtDate(aiKey.updatedAt) }}</template></p>
+      <div v-if="hasAiKey && !changing" class="rounded-xl border border-line bg-surface p-4">
+        <p class="text-sm">ตั้งคีย์ไว้ในเบราว์เซอร์นี้แล้ว <span class="font-mono">…{{ aiKeyLast4 }}</span></p>
         <div class="mt-3 flex flex-wrap gap-2">
           <Button variant="outline" size="sm" @click="changing = true">เปลี่ยนคีย์</Button>
           <Button v-if="!confirmRemove" variant="ghost" size="sm" @click="confirmRemove = true">ลบคีย์</Button>
           <template v-else>
-            <Button variant="danger" size="sm" :loading="keyBusy" @click="removeKey">ยืนยันลบคีย์</Button>
+            <Button variant="danger" size="sm" @click="removeKey">ยืนยันลบคีย์</Button>
             <Button variant="ghost" size="sm" @click="confirmRemove = false">ยกเลิก</Button>
           </template>
         </div>
       </div>
       <form v-else @submit.prevent="saveKey">
-        <p v-if="!aiKey.hasKey && !aiKey.siteKey" class="mb-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm">ยังไม่ได้ตั้งคีย์ จึงยังใช้ปุ่ม AI (เขียนตอน เขียนใหม่ สรุป ตรวจความต่อเนื่อง เสนอตัวละคร) ไม่ได้</p>
-        <Input v-model="keyText" label="คีย์ OpenRouter" type="password" autocomplete="off" placeholder="sk-or-…" hint="ระบบจะตรวจกับ OpenRouter ก่อนบันทึก" />
+        <p v-if="!hasAiKey && !auth.isAdmin" class="mb-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm">ยังไม่ได้ตั้งคีย์ในเบราว์เซอร์นี้ จึงยังใช้ปุ่ม AI (เขียนตอน เขียนใหม่ สรุป ตรวจความต่อเนื่อง เสนอตัวละคร) ไม่ได้</p>
+        <Input v-model="keyText" label="คีย์ OpenRouter" type="password" autocomplete="off" placeholder="sk-or-…" hint="ระบบจะตรวจกับ OpenRouter ก่อนเก็บ" />
         <div class="flex gap-2">
-          <Button type="submit" :loading="keyBusy" :disabled="!keyText.trim()">บันทึกคีย์</Button>
+          <Button type="submit" :loading="keyBusy" :disabled="!keyText.trim()">ตรวจและเก็บคีย์</Button>
           <Button v-if="changing" variant="ghost" @click="changing = false; keyText = ''">ยกเลิก</Button>
         </div>
       </form>
