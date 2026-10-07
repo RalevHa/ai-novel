@@ -8,6 +8,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   role: text('role', { enum: ['admin', 'writer', 'user'] }).notNull().default('user'), // writer: can write stories of their own; only an admin can grant it
   bio: text('bio').notNull().default(''), // shown on the author page
+  termsAcceptedAt: timestamp('terms_accepted_at'), // when they ticked the terms + privacy box at sign-up; null = account made before that (or by the admin seed)
   notificationsSeenAt: timestamp('notifications_seen_at'), // new-chapter items count toward the bell badge only when released after this
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })

@@ -95,7 +95,14 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
       </div>
     </header>
     <main id="main" tabindex="-1" class="wrap pb-12 pt-6 outline-none"><router-view /></main>
-    <footer class="wrap pb-8 text-xs muted">นิยายทั้งหมดเขียนโดย AI สำหรับอ่านเล่นยามว่าง</footer>
+    <footer class="wrap flex flex-wrap items-center gap-x-4 gap-y-1 pb-8 text-xs muted">
+      <span>นิยายทั้งหมดเขียนโดย AI สำหรับอ่านเล่นยามว่าง</span>
+      <router-link to="/guide" class="-my-2.5 py-2.5 hover:text-fg hover:underline">คู่มือการใช้งาน</router-link>
+      <router-link to="/about" class="-my-2.5 py-2.5 hover:text-fg hover:underline">เกี่ยวกับเรา</router-link>
+      <router-link to="/contact" class="-my-2.5 py-2.5 hover:text-fg hover:underline">ติดต่อเรา</router-link>
+      <router-link to="/terms" class="-my-2.5 py-2.5 hover:text-fg hover:underline">ข้อกำหนดการใช้งาน</router-link>
+      <router-link to="/privacy" class="-my-2.5 py-2.5 hover:text-fg hover:underline">นโยบายความเป็นส่วนตัว</router-link>
+    </footer>
   </template>
 
   <Toaster />

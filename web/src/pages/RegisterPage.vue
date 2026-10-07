@@ -7,9 +7,10 @@ import Input from '../components/ui/Input.vue'
 import { useAuth } from '../stores/auth'
 
 const auth = useAuth(), router = useRouter()
-const email = ref(''), name = ref(''), password = ref(''), error = ref(''), busy = ref(false)
+const email = ref(''), name = ref(''), password = ref(''), accepted = ref(false), error = ref(''), busy = ref(false)
 
 async function submit() {
+  if (!accepted.value) { error.value = 'ต้องยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัวก่อนสมัคร'; return }
   busy.value = true; error.value = ''
   try {
     await auth.register(email.value, name.value, password.value)
@@ -24,6 +25,10 @@ async function submit() {
       <Input v-model="email" label="อีเมล" type="email" autocomplete="username" required />
       <Input v-model="name" label="ชื่อที่แสดง" autocomplete="nickname" required />
       <Input v-model="password" label="รหัสผ่าน" hint="อย่างน้อย 8 ตัวอักษร" type="password" autocomplete="new-password" :minlength="8" required />
+      <label class="mb-4 flex min-h-11 cursor-pointer items-start gap-3 text-sm">
+        <input v-model="accepted" type="checkbox" required class="mt-0.5 size-5 shrink-0 accent-primary" />
+        <span>ฉันอ่านและยอมรับ<router-link to="/terms" target="_blank" class="text-primary underline underline-offset-2">ข้อกำหนดการใช้งาน</router-link>และ<router-link to="/privacy" target="_blank" class="text-primary underline underline-offset-2">นโยบายความเป็นส่วนตัว</router-link></span>
+      </label>
       <p v-if="error" class="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{{ error }}</p>
       <Button type="submit" size="lg" class="w-full" :loading="busy">สมัครสมาชิก</Button>
     </form>

@@ -61,10 +61,11 @@ const authRoutes = new Elysia({ prefix: '/auth' })
     if (process.env.ALLOW_REGISTRATION === 'false') return status(403, { error: 'ปิดรับสมัครสมาชิก' })
     if (limited(`register:${server?.requestIP(request)?.address}`, 5, 60 * 60_000)) return status(429, { error: 'สมัครบ่อยเกินไป ลองใหม่ภายหลัง' })
     if (await db.query.users.findFirst({ where: eq(users.email, body.email) })) return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' })
-    const [u] = await db.insert(users).values({ ...body, passwordHash: await Bun.password.hash(body.password) }).returning(publicUser)
+    const { acceptTerms: _accepted, ...fields } = body // validated below by the schema; what we keep is when it happened
+    const [u] = await db.insert(users).values({ ...fields, passwordHash: await Bun.password.hash(body.password), termsAcceptedAt: sql`now()` }).returning(publicUser)
     token.set({ value: await jwt.sign({ sub: String(u.id), role: u.role }), ...cookieOpts })
     return u
-  }, { body: t.Object({ email: t.String({ format: 'email' }), name: t.String({ minLength: 1 }), password: t.String({ minLength: 8 }) }) })
+  }, { body: t.Object({ email: t.String({ format: 'email' }), name: t.String({ minLength: 1 }), password: t.String({ minLength: 8 }), acceptTerms: t.Literal(true, { error: 'ต้องยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัวก่อนสมัคร' }) }) })
   .post('/login', async ({ body, jwt, cookie: { token }, status, request, server }) => {
     // per IP + email: guessing one account from one address is capped, without letting a stranger lock the admin out from elsewhere
     const key = `login:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`
