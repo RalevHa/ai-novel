@@ -19,7 +19,7 @@ export const users = pgTable('users', {
 export const emailCodes = pgTable('email_codes', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  purpose: text('purpose', { enum: ['verify', 'reset', 'change'] }).notNull(),
+  purpose: text('purpose', { enum: ['verify', 'reset', 'change', 'delete'] }).notNull(),
   email: text('email').notNull(), // the address the code was sent to (the new one, for 'change')
   codeHash: text('code_hash').notNull(),
   attempts: integer('attempts').notNull().default(0),

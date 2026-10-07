@@ -330,6 +330,13 @@ const commentRoutes = new Elysia()
     return { ok: true }
   }, { ...id, ...userOnly })
 
+/** Why this account cannot be deleted yet, or null. An admin has to be demoted first; stories do not cascade (stories.author_id), the owner hands them over or deletes them first. */
+async function cannotDelete(me: { id: number; role: string }) {
+  if (me.role === 'admin') return 'บัญชีผู้ดูแลระบบลบเองไม่ได้ ให้ผู้ดูแลคนอื่นลดสิทธิ์ก่อน'
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(stories).where(eq(stories.authorId, me.id))
+  return n ? `คุณยังมีนิยาย ${n} เรื่อง ต้องลบเรื่องเหล่านั้นก่อน (หรือติดต่อผู้ดูแลระบบเพื่อขอส่งมอบ)` : null
+}
+
 // Signed-in readers: where they stopped in each story
 // only chapters readers can see may be recorded, which also keeps the story foreign key valid
 const isLive = async (storyId: number, no: number) => !!(await db.select({ id: chapters.id }).from(chapters).innerJoin(stories, eq(stories.id, chapters.storyId))
@@ -393,6 +400,27 @@ const meRoutes = new Elysia({ prefix: '/me' })
       try { return (await db.update(users).set({ email: body.email, emailVerifiedAt: sql`now()` }).where(eq(users.id, me!.id)).returning(publicUser))[0] }
       catch { return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' }) } // someone else confirmed it first
     }, { body: t.Object({ email: t.String({ format: 'email' }), code: t.String({ minLength: 6, maxLength: 6 }) }) })
+    // deleting the account: password, then a code mailed to the account address; everything the person wrote is removed with it (the tables cascade)
+    .post('/delete', async ({ body, me, status }) => {
+      if (limited(`delete:${me!.id}`, 5, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+      const [u] = await db.select({ id: users.id, name: users.name, email: users.email, hash: users.passwordHash }).from(users).where(eq(users.id, me!.id))
+      if (!(await Bun.password.verify(body.password, u.hash))) return status(403, { error: 'รหัสผ่านไม่ถูกต้อง' })
+      const blocked = await cannotDelete(me!)
+      if (blocked) return status(409, { error: blocked })
+      try { if (await sendCode(u, 'delete', u.email) === 'wait') return status(429, { error: 'เพิ่งส่งรหัสไปแล้ว รอ 1 นาทีก่อนขอใหม่' }) }
+      catch (e) { console.error('delete mail failed', e); return status(503, { error: 'ส่งอีเมลไม่สำเร็จ ลองใหม่ภายหลัง' }) }
+      return { ok: true }
+    }, { body: t.Object({ password: t.String() }) })
+    .post('/delete/confirm', async ({ body, me, status, cookie: { token } }) => {
+      if (limited(`delete-confirm:${me!.id}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+      const blocked = await cannotDelete(me!)
+      if (blocked) return status(409, { error: blocked })
+      const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, me!.id))
+      if (!(await checkCode(me!.id, 'delete', u.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
+      await db.delete(users).where(eq(users.id, me!.id))
+      token.remove()
+      return { ok: true }
+    }, { body: t.Object({ code: t.String({ minLength: 6, maxLength: 6 }) }) })
     .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt })
       .from(readingProgress).where(eq(readingProgress.userId, me!.id)).orderBy(desc(readingProgress.updatedAt)))
     .put('/progress/:id', async ({ params, body, me, status }) => {

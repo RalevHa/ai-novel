@@ -1,12 +1,13 @@
 import nodemailer from 'nodemailer'
 import { esc } from './xml'
 
-export type Purpose = 'verify' | 'reset' | 'change'
+export type Purpose = 'verify' | 'reset' | 'change' | 'delete'
 export const OTP_MINUTES = 10
 
 const COPY: Record<Purpose, { subject: string; heading: string; intro: string }> = {
   verify: { subject: 'ยืนยันอีเมลของคุณ', heading: 'ยืนยันอีเมลของคุณ', intro: 'ขอบคุณที่สมัครสมาชิก ใช้รหัสด้านล่างเพื่อยืนยันอีเมล แล้วเริ่มอ่านนิยายได้เลย' },
   reset: { subject: 'รหัสสำหรับตั้งรหัสผ่านใหม่', heading: 'ตั้งรหัสผ่านใหม่', intro: 'มีคำขอตั้งรหัสผ่านใหม่สำหรับบัญชีนี้ ใช้รหัสด้านล่างเพื่อดำเนินการต่อ' },
+  delete: { subject: 'ยืนยันการลบบัญชี', heading: 'ยืนยันการลบบัญชี', intro: 'มีคำขอลบบัญชีนี้อย่างถาวร ถ้าใช้รหัสด้านล่าง ข้อมูลของคุณจะถูกลบและกู้คืนไม่ได้ ถ้าไม่ใช่คุณ ห้ามบอกรหัสกับใคร และควรเปลี่ยนรหัสผ่านทันที' },
   change: { subject: 'ยืนยันอีเมลใหม่ของคุณ', heading: 'ยืนยันอีเมลใหม่', intro: 'มีคำขอเปลี่ยนอีเมลของบัญชีมาเป็นที่อยู่นี้ ใช้รหัสด้านล่างเพื่อยืนยันว่าเป็นของคุณ' },
 }
 
