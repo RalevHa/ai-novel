@@ -1,5 +1,5 @@
 import { cors } from '@elysiajs/cors'
-import { and, asc, desc, eq, ilike, inArray, isNull, max, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, isNull, max, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { join } from 'node:path'
 import { Elysia, status, t } from 'elysia'
@@ -312,7 +312,19 @@ const meRoutes = new Elysia({ prefix: '/me' })
 const adminRoutes = new Elysia({ prefix: '/admin' })
   .use(auth)
   .guard(adminOnly, app => app
-    .get('/users', () => db.select(publicUser).from(users).orderBy(users.id))
+    // searchable by name or email, filterable by role, newest first; `counts` ignores the filter so the role chips always show the totals
+    .get('/users', async ({ query }) => {
+      const q = query.q?.trim()
+      const like = q && `%${q.replace(/[\\%_]/g, '\\$&')}%`
+      const where = and(like ? or(ilike(users.name, like), ilike(users.email, like)) : undefined, query.role ? eq(users.role, query.role) : undefined)
+      const total = await db.$count(users, where)
+      const { page, size, offset } = paging(query, total, 'first', 20)
+      const items = await db.select({ ...publicUser, storyCount: sql<number>`(select count(*)::int from stories where stories.author_id = users.id)` })
+        .from(users).where(where).orderBy(desc(users.id)).limit(size).offset(offset)
+      const byRole = await db.select({ role: users.role, n: sql<number>`count(*)::int` }).from(users).groupBy(users.role)
+      const n = (r: string) => byRole.find(x => x.role === r)?.n ?? 0
+      return { items, total, page, size, counts: { all: n('admin') + n('writer') + n('user'), admin: n('admin'), writer: n('writer'), user: n('user') } }
+    }, { query: t.Object({ ...pageQuery.properties, q: t.Optional(t.String()), role: t.Optional(t.Union([t.Literal('admin'), t.Literal('writer'), t.Literal('user')])) }) })
     // the role (user / writer / admin) is only ever changed here, and each change is written to audit_log
     .patch('/users/:id', async ({ params, body, me, status }) => {
       if (params.id === me!.id) return status(400, { error: 'เปลี่ยน role ของตัวเองไม่ได้' }) // avoid locking out the last admin
