@@ -22,10 +22,8 @@ const stories = ref<Story[]>([]), loading = ref(true)
 const time = (s: Story) => parseDb(s.updatedAt)?.getTime() || parseDb(s.createdAt)?.getTime() || 0
 const latest = computed(() => [...stories.value].sort((a, b) => time(b) - time(a)).slice(0, 8))
 const topRated = computed(() => stories.value.filter(s => s.ratingCount).sort((a, b) => ratingScore(b) - ratingScore(a) || b.ratingCount - a.ratingCount).slice(0, 8))
-// the three books fanned out next to the title: the best rated once there are enough reviews, otherwise the newest
+// the three books fanned out next to the title (and introduced one by one in the picks section): the best rated once there are enough reviews, otherwise the newest
 const featured = computed(() => (topRated.value.length >= 3 ? topRated.value : latest.value).slice(0, 3))
-// the books introduced one by one while scrolling: same source as the fan, one more book
-const picks = computed(() => (topRated.value.length >= 3 ? topRated.value : latest.value).slice(0, 4))
 const chapterTotal = computed(() => stories.value.reduce((n, s) => n + s.chapterCount, 0))
 const badge = (s: Story) => (s.status === 'completed' ? 'จบแล้ว' : isRecent(s.updatedAt) ? 'อัปเดตใหม่' : '')
 
@@ -132,13 +130,13 @@ onBeforeUnmount(() => mm?.revert())
 
   <div class="space-y-16 pb-6 pt-8 md:space-y-20 md:pt-12">
     <!-- picks: scrolling introduces one book at a time (pinned on desktop, see motion()) -->
-    <section v-if="picks.length" ref="stage" aria-labelledby="pick-h">
+    <section v-if="featured.length" ref="stage" aria-labelledby="pick-h">
       <div class="head mb-6 flex items-baseline gap-3">
         <span class="font-mincho text-2xl font-bold text-primary/70" aria-hidden="true">推薦</span>
         <h2 id="pick-h" class="font-serif text-2xl font-bold">แนะนำให้อ่าน</h2>
       </div>
       <div class="pin space-y-14">
-        <article v-for="(s, i) in picks" :key="s.id" class="pick grid items-center gap-6 sm:grid-cols-[minmax(0,230px)_1fr] sm:gap-14">
+        <article v-for="(s, i) in featured" :key="s.id" class="pick grid items-center gap-6 sm:grid-cols-[minmax(0,230px)_1fr] sm:gap-14">
           <router-link :to="`/story/${s.id}`" class="pick-cover hero-book mx-auto block w-[min(230px,62vw)] sm:mx-0" :aria-label="s.title"><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
           <div class="pick-text relative">
             <span class="pointer-events-none absolute -top-10 right-0 select-none font-serif text-[88px] font-bold leading-none text-primary/[.08]" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
