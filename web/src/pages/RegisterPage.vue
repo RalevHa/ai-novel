@@ -14,7 +14,7 @@ async function submit() {
   busy.value = true; error.value = ''
   try {
     await auth.register(email.value, name.value, password.value)
-    router.push('/story')
+    router.push({ path: '/verify', query: { email: email.value } })
   } catch (e) { error.value = (e as Error).message } finally { busy.value = false }
 }
 </script>

@@ -22,7 +22,7 @@ const between = (from: Date, to = new Date(now)) => new Date(from.getTime() + rn
 
 const hash = await Bun.password.hash('demo1234')
 const mkUsers = async (rows: { email: string; name: string; role: 'writer' | 'user'; bio?: string }[]) =>
-  db.insert(users).values(rows.map(r => ({ ...r, email: `${r.email}@demo.local`, passwordHash: hash, createdAt: daysAgo(30 + rnd() * 10) }))).returning({ id: users.id, name: users.name })
+  db.insert(users).values(rows.map(r => ({ ...r, email: `${r.email}@demo.local`, passwordHash: hash, emailVerifiedAt: daysAgo(30), createdAt: daysAgo(30 + rnd() * 10) }))).returning({ id: users.id, name: users.name })
 
 const writers = await mkUsers([
   { email: 'demo.writer1', name: 'ใบบัว', role: 'writer', bio: 'เขียนนิยายแฟนตาซีและโรแมนซ์ตอนกลางคืน ชอบกาแฟดำกับฝนตก อัปเดตเรื่องละตอนสองตอนต่อสัปดาห์' },

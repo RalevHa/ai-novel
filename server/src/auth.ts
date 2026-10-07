@@ -1,5 +1,5 @@
 import { jwt } from '@elysiajs/jwt'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { Elysia, status } from 'elysia'
 import { db } from './db'
 import { chapters, characters, stories, users } from './schema'
@@ -13,6 +13,7 @@ export function assertConfig() {
   const secret = process.env.JWT_SECRET
   if (!secret) throw new Error('JWT_SECRET is not set')
   if (prod && (secret === 'change-me' || secret.length < 32)) throw new Error('JWT_SECRET must be a random string of 32+ characters in production')
+  if (prod && !process.env.SMTP_HOST) throw new Error('SMTP_HOST is not set: sign-up needs to email a code (see SMTP_* in server/.env.example)')
   if (prod && process.env.ADMIN_PASSWORD === 'admin1234') throw new Error('Change ADMIN_PASSWORD from the example value before running in production')
 }
 
@@ -59,5 +60,5 @@ export async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL, password = process.env.ADMIN_PASSWORD
   if (!email || !password) return
   const exists = await db.query.users.findFirst({ where: eq(users.email, email) })
-  if (!exists) await db.insert(users).values({ email, name: 'Admin', role: 'admin', passwordHash: await Bun.password.hash(password) })
+  if (!exists) await db.insert(users).values({ email, name: 'Admin', role: 'admin', passwordHash: await Bun.password.hash(password), emailVerifiedAt: sql`now()` })
 }

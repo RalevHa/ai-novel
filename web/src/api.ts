@@ -8,7 +8,7 @@ export async function ok<T>(p: Promise<{ data: T; error: { status: unknown; valu
   const { data, error } = await p
   if (error) {
     const v = error.value as any
-    throw new Error(typeof v === 'string' ? v : v?.error || v?.message || `HTTP ${error.status}`)
+    throw Object.assign(new Error(typeof v === 'string' ? v : v?.error || v?.message || `HTTP ${error.status}`), { data: v })
   }
   return data as NonNullable<T>
 }

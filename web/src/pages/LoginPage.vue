@@ -14,7 +14,11 @@ async function submit() {
   try {
     await auth.login(email.value, password.value)
     router.push(typeof route.query.next === 'string' ? route.query.next : '/story')
-  } catch (e) { error.value = (e as Error).message } finally { busy.value = false }
+  } catch (e) {
+    // right password but the address was never confirmed: the server has sent a code, so go and enter it
+    if ((e as { data?: { needsVerify?: boolean } }).data?.needsVerify) router.push({ path: '/verify', query: { email: email.value } })
+    else error.value = (e as Error).message
+  } finally { busy.value = false }
 }
 </script>
 
@@ -23,6 +27,7 @@ async function submit() {
     <form @submit.prevent="submit">
       <Input v-model="email" label="อีเมล" type="email" autocomplete="username" required />
       <Input v-model="password" label="รหัสผ่าน" type="password" autocomplete="current-password" required />
+      <p class="-mt-2 mb-4 text-sm"><router-link to="/forgot" class="-my-3 inline-block py-3 text-primary underline underline-offset-2">ลืมรหัสผ่าน?</router-link></p>
       <p v-if="error" class="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{{ error }}</p>
       <Button type="submit" size="lg" class="w-full" :loading="busy">เข้าสู่ระบบ</Button>
     </form>

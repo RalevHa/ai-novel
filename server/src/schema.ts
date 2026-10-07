@@ -8,10 +8,23 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   role: text('role', { enum: ['admin', 'writer', 'user'] }).notNull().default('user'), // writer: can write stories of their own; only an admin can grant it
   bio: text('bio').notNull().default(''), // shown on the author page
+  emailVerifiedAt: timestamp('email_verified_at'), // when they proved the address with a one-time code; null = cannot sign in yet (accounts that existed before this column were marked verified)
   termsAcceptedAt: timestamp('terms_accepted_at'), // when they ticked the terms + privacy box at sign-up; null = account made before that (or by the admin seed)
   notificationsSeenAt: timestamp('notifications_seen_at'), // new-chapter items count toward the bell badge only when released after this
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
+
+// One live one-time code per user and purpose (a new request replaces the old one). Only an HMAC of the code is stored.
+export const emailCodes = pgTable('email_codes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  purpose: text('purpose', { enum: ['verify', 'reset', 'change'] }).notNull(),
+  email: text('email').notNull(), // the address the code was sent to (the new one, for 'change')
+  codeHash: text('code_hash').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [unique('email_codes_user_purpose_key').on(t.userId, t.purpose)])
 
 export const stories = pgTable('stories', {
   id: serial('id').primaryKey(),
