@@ -113,7 +113,7 @@ const authRoutes = new Elysia({ prefix: '/auth' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, email: true } })
     if (!u || !(await checkCode(u.id, 'reset', u.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
     // the code came to their inbox, so this also proves the address; sign-in itself stays a separate step
-    await db.update(users).set({ passwordHash: await Bun.password.hash(body.password), emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` }).where(eq(users.id, u.id))
+    await db.update(users).set({ passwordHash: await Bun.password.hash(body.password), passwordChangedAt: sql`now()`, emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` }).where(eq(users.id, u.id))
     return { ok: true }
   }, { body: t.Object({ email: t.String(), code: t.String({ minLength: 6, maxLength: 6 }), password: t.String({ minLength: 8 }) }) })
   .post('/logout', ({ cookie: { token } }) => { token.remove(); return { ok: true } })
@@ -359,7 +359,7 @@ async function aiKeyState(me: { id: number; role: string }) {
 const meRoutes = new Elysia({ prefix: '/me' })
   .use(auth)
   .guard(userOnly, app => app
-    .patch('/profile', async ({ body, me, status }) => {
+    .patch('/profile', async ({ body, me, status, jwt, cookie: { token } }) => {
       const { currentPassword, newPassword, ...fields } = body
       const set: Partial<typeof users.$inferInsert> = { ...fields, ...(fields.name !== undefined && { name: fields.name.trim() }) }
       if (set.name === '') return status(422, { error: 'ต้องมีชื่อ' })
@@ -368,9 +368,13 @@ const meRoutes = new Elysia({ prefix: '/me' })
         const [u] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, me!.id))
         if (!currentPassword || !(await Bun.password.verify(currentPassword, u.hash))) return status(403, { error: 'รหัสผ่านปัจจุบันไม่ถูกต้อง' })
         set.passwordHash = await Bun.password.hash(newPassword)
+        set.passwordChangedAt = new Date()
       }
       if (!Object.keys(set).length) return status(422, { error: 'ไม่มีอะไรให้แก้ไข' })
-      return (await db.update(users).set(set).where(eq(users.id, me!.id)).returning(publicUser))[0]
+      const [saved] = await db.update(users).set(set).where(eq(users.id, me!.id)).returning(publicUser)
+      // the change signs every device out, this one included, so hand this one a fresh session
+      if (newPassword) token.set({ value: await jwt.sign({ sub: String(saved.id), role: saved.role }), ...cookieOpts })
+      return saved
     }, { body: t.Object({ name: t.Optional(t.String({ maxLength: 60 })), bio: t.Optional(t.String({ maxLength: 500 })), currentPassword: t.Optional(t.String()), newPassword: t.Optional(t.String({ minLength: 8 })) }) })
     // changing the address: a code goes to the NEW one; nothing changes until it is entered
     .post('/email', async ({ body, me, status }) => {

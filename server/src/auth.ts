@@ -17,13 +17,16 @@ export function assertConfig() {
   if (prod && process.env.ADMIN_PASSWORD === 'admin1234') throw new Error('Change ADMIN_PASSWORD from the example value before running in production')
 }
 
+/** True when a token (iat in seconds) predates the last password change (epoch seconds, 0 = never). Compared by whole seconds, so signing in right after a reset is never refused. */
+export const issuedBeforeChange = (iat: number | undefined, changedEpoch: number) => changedEpoch > 0 && (iat ?? 0) < Math.floor(changedEpoch)
+
 export const auth = new Elysia({ name: 'auth' })
   .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET!, exp: '30d' }))
   .derive({ as: 'global' }, async ({ jwt, cookie: { token } }) => {
     const p = token.value ? await jwt.verify(token.value as string) : false
     // role comes from the DB, not the token: demoting or deleting a user takes effect on their next request
-    const u = p && (await db.select({ role: users.role }).from(users).where(eq(users.id, Number(p.sub))))[0]
-    return { me: p && u ? { id: Number(p.sub), role: u.role as Role } : null }
+    const u = p && (await db.select({ role: users.role, changed: sql<number>`coalesce(extract(epoch from ${users.passwordChangedAt}), 0)::float8` }).from(users).where(eq(users.id, Number(p.sub))))[0]
+    return { me: p && u && !issuedBeforeChange(p.iat, u.changed) ? { id: Number(p.sub), role: u.role as Role } : null }
   })
 
 // status() (not set.status) keeps the error out of the success response type that Eden infers
