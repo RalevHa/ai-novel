@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm'
 import { type AnyPgColumn, boolean, check, doublePrecision, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, unique } from 'drizzle-orm/pg-core'
 
 /** Reading settings that follow the account across devices (the web keeps its own copy in localStorage). Every field is optional: unset = the device default. */
-export type ReaderPrefs = { theme?: 'paper' | 'sepia' | 'ink'; fontSize?: number; fontFace?: 'serif' | 'sans'; measure?: 'narrow' | 'normal' | 'wide'; leading?: 'tight' | 'normal' | 'loose' }
+export type ReaderPrefs = { theme?: 'paper' | 'sepia' | 'ink'; fontSize?: number; fontFace?: 'serif' | 'sans'; measure?: 'narrow' | 'normal' | 'wide'; leading?: 'tight' | 'normal' | 'loose'; para?: 'tight' | 'normal' | 'loose'; indent?: 'off' | 'on' }
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),

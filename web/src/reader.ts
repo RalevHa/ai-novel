@@ -9,6 +9,13 @@ export const LEADING_OPTIONS = [{ k: 'tight', n: 'กระชับ' }, { k: 'n
 /** Line height: "normal" keeps the typeface's own default (serif reads looser than sans). */
 export const leadingValue = (leading: Leading, face: 'serif' | 'sans') => ({ tight: 1.8, loose: 2.3, normal: face === 'sans' ? 1.95 : 2.05 })[leading]
 
+export type Para = 'tight' | 'normal' | 'loose'
+export const PARA_OPTIONS = [{ k: 'tight', n: 'ชิด' }, { k: 'normal', n: 'ปกติ' }, { k: 'loose', n: 'ห่าง' }] as const
+/** Gap between paragraphs, in em. */
+export const paraValue = (para: Para) => ({ tight: 0.4, normal: 1.05, loose: 1.7 })[para]
+export type Indent = 'off' | 'on'
+export const INDENT_OPTIONS = [{ k: 'off', n: 'ไม่เว้น' }, { k: 'on', n: 'เว้นต้นย่อหน้า' }] as const
+
 /** Roughly how long a chapter takes to read. Thai has no spaces, so count characters: about 1,000 a minute. */
 export function readingMinutes(markdown: string) {
   const chars = markdown.replace(/!\[[^\]]*\]\((?:[^)"]|"[^"]*")*\)/g, '').replace(/[\s#*_>`~-]/g, '').length

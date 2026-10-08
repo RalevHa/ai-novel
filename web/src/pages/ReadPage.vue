@@ -11,7 +11,7 @@ import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
 import { FINISHED, READ_AT, RESTORE_MIN, scrollFraction, scrollTarget } from '../readPos'
-import { chromeHidden, LEADING_OPTIONS, leadingValue, MEASURE_OPTIONS, MEASURES, readingMinutes, swipeDir, type Leading, type Measure } from '../reader'
+import { chromeHidden, INDENT_OPTIONS, LEADING_OPTIONS, leadingValue, MEASURE_OPTIONS, MEASURES, PARA_OPTIONS, paraValue, readingMinutes, swipeDir, type Indent, type Leading, type Measure, type Para } from '../reader'
 import { countFinish, countView, flush, getPos, markRead, savePos } from '../readState'
 import { setTitle } from '../title'
 import { RATES, useSpeech } from '../tts'
@@ -42,6 +42,10 @@ const measure = ref<Measure>(stored('readerWidth', v => v in MEASURES, 'normal')
 const leading = ref<Leading>(stored('readerLeading', v => ['tight', 'normal', 'loose'].includes(v), 'normal'))
 watch(measure, v => { lsSet('readerWidth', v); savePrefs() })
 watch(leading, v => { lsSet('readerLeading', v); savePrefs() })
+const para = ref<Para>(stored('readerPara', v => ['tight', 'normal', 'loose'].includes(v), 'normal'))
+const indent = ref<Indent>(stored('readerIndent', v => v === 'on' || v === 'off', 'off'))
+watch(para, v => { lsSet('readerPara', v); savePrefs() })
+watch(indent, v => { lsSet('readerIndent', v); savePrefs() })
 
 const idx = computed(() => nos.value.indexOf(no.value))
 const prev = computed(() => idx.value > 0 ? nos.value[idx.value - 1] : null)
@@ -136,7 +140,13 @@ let lastY = 0, hidden = false
 const showTop = ref(false)
 function setChrome(hide: boolean) {
   hidden = hide
-  if (hide) document.documentElement.dataset.chrome = 'hidden'; else delete document.documentElement.dataset.chrome
+  if (hide) {
+    // scrolling on means the reader is done with the header and toolbar: close their open menus (toggling the button) and drop focus, or :focus-within keeps them showing
+    const bars = '.site-header, .reader-bar'
+    document.querySelectorAll<HTMLElement>('.site-header [aria-expanded="true"], .reader-bar [aria-expanded="true"]').forEach(b => b.click())
+    setTimeout(() => { if (document.activeElement?.closest(bars)) (document.activeElement as HTMLElement).blur() }) // after the menus hand focus back to their button
+    document.documentElement.dataset.chrome = 'hidden'
+  } else delete document.documentElement.dataset.chrome
 }
 const backToTop = () => scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 
@@ -193,8 +203,8 @@ onBeforeUnmount(() => {
   <Bar v-if="loading" />
   <p v-if="error" class="mx-auto max-w-[680px] rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">{{ error }}</p>
 
-  <div v-if="chapter" class="mx-auto max-w-[var(--reader-w,680px)] pb-6" :style="{ '--reader-size': size + 'px', '--reader-w': MEASURES[measure] + 'px', '--reader-lh': leadingValue(leading, face) }">
-    <div class="mb-8 flex items-center">
+  <div v-if="chapter" class="mx-auto max-w-[var(--reader-w,680px)] pb-6" :style="{ '--reader-size': size + 'px', '--reader-w': MEASURES[measure] + 'px', '--reader-lh': leadingValue(leading, face), '--reader-para': paraValue(para) + 'em', '--reader-indent': indent === 'on' ? '2em' : '0' }">
+    <div class="reader-bar sticky top-[60px] z-20 mb-6 flex items-center bg-bg py-2">
       <Button variant="ghost" :to="`/story/${id}`" class="-ml-3 px-3" aria-label="สารบัญ"><List class="size-5" /><span class="hidden sm:inline">สารบัญ</span></Button>
       <ChapterSelect :chapters="list" :model-value="no" class="mx-2 max-w-[300px] flex-1" @update:model-value="go" />
       <template v-if="speech.supported">
@@ -206,7 +216,7 @@ onBeforeUnmount(() => {
       </template>
       <Popover class="relative">
         <PopoverButton as="template"><Button variant="ghost" class="px-3" aria-label="ตัวอักษร"><Type class="size-5" /><span class="hidden sm:inline">ตัวอักษร</span></Button></PopoverButton>
-        <PopoverPanel class="absolute right-0 z-40 mt-1 w-72 rounded-xl border border-line bg-surface p-4 shadow-lg">
+        <PopoverPanel class="absolute right-0 z-40 mt-1 max-h-[calc(100dvh-8rem)] w-72 overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-lg">
           <div class="eyebrow mb-2">ธีม</div>
           <Segmented :model-value="theme" :options="THEMES" label="ธีม" class="mb-4" @update:model-value="setTheme($event as ThemeName)" />
           <div class="eyebrow mb-2">แบบอักษร</div>
@@ -217,6 +227,10 @@ onBeforeUnmount(() => {
           <Segmented :model-value="measure" :options="MEASURE_OPTIONS" label="ความกว้างบรรทัด" class="mb-4" @update:model-value="measure = $event as Measure" />
           <div class="eyebrow mb-2">ระยะห่างบรรทัด</div>
           <Segmented :model-value="leading" :options="LEADING_OPTIONS" label="ระยะห่างบรรทัด" class="mb-4" @update:model-value="leading = $event as Leading" />
+          <div class="eyebrow mb-2">ระยะห่างย่อหน้า</div>
+          <Segmented :model-value="para" :options="PARA_OPTIONS" label="ระยะห่างย่อหน้า" class="mb-4" @update:model-value="para = $event as Para" />
+          <div class="eyebrow mb-2">ย่อหน้า</div>
+          <Segmented :model-value="indent" :options="INDENT_OPTIONS" label="ย่อหน้า" class="mb-4" @update:model-value="indent = $event as Indent" />
           <template v-if="speech.supported">
             <div class="eyebrow mb-2">ความเร็วเสียงอ่าน</div>
             <Segmented :model-value="speech.rate.value" :options="RATES" label="ความเร็วเสียงอ่าน" @update:model-value="speech.setRate($event as string)" />
@@ -240,11 +254,7 @@ onBeforeUnmount(() => {
     <nav :class="[next ? 'mt-4' : 'mt-14', 'space-y-3 border-t border-line pt-6']" aria-label="เปลี่ยนตอน">
       <div class="flex gap-2">
         <Button variant="outline" class="flex-1" :disabled="!prev" @click="go(prev)"><ChevronLeft class="size-5" />ตอนก่อนหน้า</Button>
-        <Button class="flex-1" :disabled="!next" @click="go(next)">ตอนถัดไป<ChevronRight class="size-5" /></Button>
-      </div>
-      <div class="flex items-center gap-2">
-        <ChapterSelect :chapters="list" :model-value="no" up class="flex-1" @update:model-value="go" />
-        <Button variant="ghost" :to="`/story/${id}`">สารบัญ</Button>
+        <Button variant="outline" class="flex-1" :to="`/story/${id}`"><List class="size-5" />สารบัญ</Button>
       </div>
     </nav>
     <p v-if="!next" class="muted mt-4 text-center text-xs">นี่คือตอนล่าสุด</p>

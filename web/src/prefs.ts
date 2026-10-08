@@ -7,7 +7,7 @@ import { setTheme, theme, THEMES, type ThemeName } from './theme'
 type Prefs = Awaited<ReturnType<typeof load>>
 const load = () => ok(client.api.me.prefs.get())
 
-const KEYS = { theme: 'theme', fontSize: 'fontSize', fontFace: 'fontFace', measure: 'readerWidth', leading: 'readerLeading' } as const
+const KEYS = { theme: 'theme', fontSize: 'fontSize', fontFace: 'fontFace', measure: 'readerWidth', leading: 'readerLeading', para: 'readerPara', indent: 'readerIndent' } as const
 const MEASURES = ['narrow', 'normal', 'wide'], LEADINGS = ['tight', 'normal', 'loose']
 
 /** This device's settings, only the ones the reader has actually chosen (so defaults are never uploaded as choices). */
@@ -20,6 +20,9 @@ export function localPrefs(): Prefs {
   if (face === 'serif' || face === 'sans') p.fontFace = face
   if (measure && MEASURES.includes(measure)) p.measure = measure as Prefs['measure']
   if (leading && LEADINGS.includes(leading)) p.leading = leading as Prefs['leading']
+  const para = get('para'), indent = get('indent')
+  if (para && LEADINGS.includes(para)) p.para = para as Prefs['para']
+  if (indent === 'off' || indent === 'on') p.indent = indent
   return p
 }
 
@@ -28,6 +31,8 @@ function apply(p: Prefs) {
   if (p.fontFace) lsSet(KEYS.fontFace, p.fontFace)
   if (p.measure) lsSet(KEYS.measure, p.measure)
   if (p.leading) lsSet(KEYS.leading, p.leading)
+  if (p.para) lsSet(KEYS.para, p.para)
+  if (p.indent) lsSet(KEYS.indent, p.indent)
   if (p.theme) setTheme(p.theme) // last: it also repaints the page
 }
 
