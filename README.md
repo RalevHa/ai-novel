@@ -106,3 +106,7 @@ cd web && bun test                                     # เทสต์ฝั�
 cd server && bun run db:generate                       # หลังแก้ schema.ts: สร้างไฟล์ migration ใหม่ใน server/drizzle
 cd web && bunx vite build                              # build หน้าเว็บ
 ```
+
+## ไลเซนส์
+
+[MIT](LICENSE) © RalevHa
