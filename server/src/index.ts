@@ -495,6 +495,8 @@ const meRoutes = new Elysia({ prefix: '/me' })
         fontFace: t.Optional(t.Union([t.Literal('serif'), t.Literal('sans')])),
         measure: t.Optional(t.Union([t.Literal('narrow'), t.Literal('normal'), t.Literal('wide')])),
         leading: t.Optional(t.Union([t.Literal('tight'), t.Literal('normal'), t.Literal('loose')])),
+        para: t.Optional(t.Union([t.Literal('tight'), t.Literal('normal'), t.Literal('loose')])),
+        indent: t.Optional(t.Union([t.Literal('off'), t.Literal('on')])),
       }, { additionalProperties: false }),
     })
     .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt })
