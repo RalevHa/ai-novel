@@ -22,7 +22,7 @@ import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './upl
 import { db } from './db'
 import { API_BASE, streamChat, type Usage } from './openrouter'
 import { encryptSecret } from './secrets'
-import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviews, readingProgress, stories, userAiKeys, users } from './schema'
+import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviewReplies, reviews, reviewVotes, readingProgress, stories, userAiKeys, users } from './schema'
 import { releasedAtFor } from './release'
 import { siteRoutes } from './site'
 import { restore, snapshot } from './versions'
@@ -283,12 +283,23 @@ async function listReviews(storyId: number, query: { page?: number; size?: numbe
   const dist = [1, 2, 3, 4, 5].map(r => counts.find(c => c.rating === r)?.n ?? 0) // index 0 = one star
   const total = dist.reduce((a, b) => a + b, 0)
   const { page, size, offset } = paging(query, total, 'first', 10)
-  const rows = await db.select({ id: reviews.id, rating: reviews.rating, body: reviews.body, createdAt: reviews.createdAt, updatedAt: reviews.updatedAt, userId: reviews.userId, userName: users.name })
-    .from(reviews).innerJoin(users, eq(users.id, reviews.userId)).where(where).orderBy(desc(reviews.updatedAt), desc(reviews.id)).limit(size).offset(offset)
+  const rows = await db.select({
+    id: reviews.id, rating: reviews.rating, body: reviews.body, createdAt: reviews.createdAt, updatedAt: reviews.updatedAt, userId: reviews.userId, userName: users.name,
+    score: sql<number>`coalesce((select sum(value) from review_votes where review_id = reviews.id), 0)::int`,
+    myVote: me ? sql<number | null>`(select value from review_votes where review_id = reviews.id and user_id = ${me.id})` : sql<number | null>`null`,
+  }).from(reviews).innerJoin(users, eq(users.id, reviews.userId)).where(where).orderBy(desc(reviews.updatedAt), desc(reviews.id)).limit(size).offset(offset)
+  // ponytail: every reply of the reviews on this page; paginate per review if one ever gets a huge thread
+  const replies = rows.length ? await db.select({ id: reviewReplies.id, reviewId: reviewReplies.reviewId, body: reviewReplies.body, createdAt: reviewReplies.createdAt, userId: reviewReplies.userId, userName: users.name })
+    .from(reviewReplies).innerJoin(users, eq(users.id, reviewReplies.userId)).where(inArray(reviewReplies.reviewId, rows.map(r => r.id))).orderBy(asc(reviewReplies.id)).limit(500) : []
+  const [{ authorId }] = await db.select({ authorId: stories.authorId }).from(stories).where(eq(stories.id, storyId))
+  const canRemove = (userId: number) => !!me && (me.role === 'admin' || me.id === userId || me.id === authorId) // the story's author may clear replies under their own story
   const mine = me ? (await db.select({ id: reviews.id, rating: reviews.rating, body: reviews.body }).from(reviews).where(and(where, eq(reviews.userId, me.id))))[0] ?? null : null
   return {
     average: total ? dist.reduce((a, n, i) => a + n * (i + 1), 0) / total : 0, dist, mine,
-    items: rows.map(r => ({ ...r, canDelete: !!me && (me.role === 'admin' || me.id === r.userId) })), total, page, size,
+    items: rows.map(r => ({
+      ...r, canDelete: !!me && (me.role === 'admin' || me.id === r.userId), isAuthor: r.userId === authorId,
+      replies: replies.filter(p => p.reviewId === r.id).map(p => ({ ...p, isAuthor: p.userId === authorId, canDelete: canRemove(p.userId) })),
+    })), total, page, size,
   }
 }
 
@@ -301,6 +312,27 @@ async function saveReview(storyId: number, rating: number, text: string, me: { i
   await db.insert(reviews).values({ storyId, userId: me.id, rating, body })
     .onConflictDoUpdate({ target: [reviews.storyId, reviews.userId], set: { rating, body, updatedAt: sql`now()` } })
   return { ok: true }
+}
+
+async function voteReview(reviewId: number, value: -1 | 0 | 1, me: { id: number }) {
+  const [r] = await db.select({ userId: reviews.userId }).from(reviews).where(eq(reviews.id, reviewId))
+  if (!r) return status(404, { error: 'ไม่พบข้อมูล' })
+  if (r.userId === me.id) return status(403, { error: 'โหวตรีวิวของตัวเองไม่ได้' })
+  if (limited(`vote:${me.id}`, 60, 10 * 60_000)) return status(429, { error: 'โหวตบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+  if (value === 0) await db.delete(reviewVotes).where(and(eq(reviewVotes.reviewId, reviewId), eq(reviewVotes.userId, me.id)))
+  else await db.insert(reviewVotes).values({ reviewId, userId: me.id, value }).onConflictDoUpdate({ target: [reviewVotes.reviewId, reviewVotes.userId], set: { value } })
+  const [{ score }] = await db.select({ score: sql<number>`coalesce(sum(${reviewVotes.value}), 0)::int` }).from(reviewVotes).where(eq(reviewVotes.reviewId, reviewId))
+  return { score, myVote: value || null }
+}
+
+async function addReviewReply(reviewId: number, text: string, me: { id: number }) {
+  const body = text.trim()
+  if (!body) return status(422, { error: 'พิมพ์ข้อความก่อน' })
+  if (limited(`comment:${me.id}`, 10, 10 * 60_000)) return status(429, { error: 'คอมเมนต์บ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+  const [r] = await db.select({ id: reviews.id }).from(reviews).innerJoin(stories, eq(stories.id, reviews.storyId)).where(and(eq(reviews.id, reviewId), eq(stories.published, true)))
+  if (!r) return status(404, { error: 'ไม่พบข้อมูล' })
+  const [row] = await db.insert(reviewReplies).values({ reviewId, userId: me.id, body }).returning({ id: reviewReplies.id })
+  return row
 }
 
 const commentRoutes = new Elysia()
@@ -342,6 +374,16 @@ const commentRoutes = new Elysia()
   }, { ...id, body: t.Object({ reason: t.Optional(t.String({ maxLength: 300 })) }), ...userOnly })
   .get('/stories/:id/reviews', ({ params, query, me }) => listReviews(params.id, query, me), { ...id, query: pageQuery })
   .put('/stories/:id/reviews', ({ params, body, me }) => saveReview(params.id, body.rating, body.body ?? '', me!), { ...id, body: t.Object({ rating: t.Integer({ minimum: 1, maximum: 5 }), body: t.Optional(t.String({ maxLength: REVIEW_MAX })) }), ...userOnly })
+  .put('/reviews/:id/vote', ({ params, body, me }) => voteReview(params.id, body.value, me!), { ...id, body: t.Object({ value: t.Union([t.Literal(-1), t.Literal(0), t.Literal(1)]) }), ...userOnly })
+  .post('/reviews/:id/replies', ({ params, body, me }) => addReviewReply(params.id, body.body, me!), { ...id, body: t.Object({ body: t.String({ maxLength: COMMENT_MAX }) }), ...userOnly })
+  .delete('/review-replies/:id', async ({ params, me }) => {
+    const [r] = await db.select({ userId: reviewReplies.userId, storyAuthor: stories.authorId }).from(reviewReplies)
+      .innerJoin(reviews, eq(reviews.id, reviewReplies.reviewId)).innerJoin(stories, eq(stories.id, reviews.storyId)).where(eq(reviewReplies.id, params.id))
+    if (!r) return status(404, { error: 'ไม่พบข้อมูล' })
+    if (me!.role !== 'admin' && me!.id !== r.userId && me!.id !== r.storyAuthor) return status(403, { error: 'ลบได้เฉพาะความคิดเห็นของตัวเอง' })
+    await db.delete(reviewReplies).where(eq(reviewReplies.id, params.id))
+    return { ok: true }
+  }, { ...id, ...userOnly })
   // the story's author cannot remove reviews of their own story (that would hide criticism); the reviewer and admins can
   .delete('/reviews/:id', async ({ params, me }) => {
     const [r] = await db.select({ userId: reviews.userId }).from(reviews).where(eq(reviews.id, params.id))

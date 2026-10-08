@@ -152,6 +152,21 @@ export const reviews = pgTable('reviews', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, t => [unique('reviews_story_user_key').on(t.storyId, t.userId), check('reviews_rating_range', sql`${t.rating} between 1 and 5`)])
 
+// reviews can be voted up/down (+1/-1, one per reader; removing a vote deletes the row) and answered with flat replies
+export const reviewVotes = pgTable('review_votes', {
+  reviewId: integer('review_id').notNull().references(() => reviews.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  value: integer('value').notNull(),
+}, t => [primaryKey({ columns: [t.reviewId, t.userId] }), check('review_votes_value', sql`${t.value} in (-1, 1)`)])
+
+export const reviewReplies = pgTable('review_replies', {
+  id: serial('id').primaryKey(),
+  reviewId: integer('review_id').notNull().references(() => reviews.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [index('review_replies_review_idx').on(t.reviewId, t.id)])
+
 // "someone replied to you" / "your comment got an upvote". One row per (recipient, kind, comment): a new upvote on the same comment
 // just marks its row unread again; the score shown is read live from the comment
 export const notifications = pgTable('notifications', {
