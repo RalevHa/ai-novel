@@ -11,6 +11,7 @@ import { buildContext, excerptSql } from './context'
 import { buildEpub } from './epub'
 import { atomFeed } from './feed'
 import { loopStart } from './guard'
+import { ogPage } from './og'
 import { checkCode, sendCode } from './otp'
 import { imageNames, stripImages } from './markdown'
 import { markDone, nextBeat } from './outline'
@@ -120,6 +121,21 @@ const authRoutes = new Elysia({ prefix: '/auth' })
   .post('/logout', ({ cookie: { token } }) => { token.remove(); return { ok: true } })
   .get('/me', async ({ me }) => me && (await db.select(publicUser).from(users).where(eq(users.id, me.id)))[0] || null)
 
+async function ogCard(storyId: number, no: number | undefined, request: Request) {
+  const s = await db.query.stories.findFirst({ where: and(eq(stories.id, storyId), eq(stories.published, true)), columns: { title: true, synopsis: true, coverImage: true } })
+  const ch = s && no !== undefined ? (await db.select({ title: chapters.title, excerpt: excerptSql(300) }).from(chapters).where(and(eq(chapters.storyId, storyId), eq(chapters.no, no), visible)))[0] : undefined
+  if (!s || (no !== undefined && !ch)) return status(404, { error: 'ไม่พบข้อมูล' })
+  const base = (process.env.PUBLIC_URL || new URL(request.url).origin).replace(/\/$/, '')
+  // chapters usually open with their own title line ("# title" or "ชื่อตอน: title"); the card already shows it, so start the blurb at the prose
+  const blurb = ch && (ch.title && ch.excerpt.split('\n')[0].includes(ch.title) ? ch.excerpt.replace(/^.*\n+/, '') : ch.excerpt)
+  const html = ogPage({
+    // story first: unfurlers cut long titles at the end, and the story name is the part that must survive
+    title: ch ? `${s.title} · ${ch.title || `ตอนที่ ${no}`}` : s.title, description: blurb ?? s.synopsis,
+    url: `${base}/story/${storyId}${ch ? `/read/${no}` : ''}`, image: s.coverImage ? `${base}/api/uploads/${s.coverImage}` : undefined,
+  })
+  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } })
+}
+
 // Reader side: published only
 const readerRoutes = new Elysia()
   // only names we generated are served, so there is no path to traverse
@@ -171,6 +187,10 @@ const readerRoutes = new Elysia()
     const base = (process.env.PUBLIC_URL || new URL(request.url).origin).replace(/\/$/, '')
     return new Response(atomFeed(s, rows.map(r => ({ ...r, at: new Date(r.at.replace(' ', 'T') + 'Z') })), base), { headers: { 'content-type': 'application/atom+xml; charset=utf-8' } })
   }, id)
+  // Link-preview cards (Open Graph) for story and chapter links. The web app is a SPA, so a crawler sees none of its tags; point the reverse proxy at these for
+  // crawler user agents (see README). Visitors who land here are redirected to the real page straight away.
+  .get('/og/story/:id', ({ params, request }) => ogCard(params.id, undefined, request), id)
+  .get('/og/story/:id/read/:no', ({ params, request }) => ogCard(params.id, params.no, request), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
   // Anonymous aggregate counters: how many times a chapter was opened / read to the end. Nothing about who is stored (the IP is only used for the in-memory rate limit).
   .post('/stories/:id/chapters/:no/view', async ({ params, body, status, request, server }) => {
     if (limited(`view:${server?.requestIP(request)?.address}`, 300, 60 * 60_000)) return status(429, { error: 'ส่งบ่อยเกินไป' })
