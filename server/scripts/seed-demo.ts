@@ -4,7 +4,7 @@
 //   cd server && bun run db:seed-demo
 import { and, eq, like, sql } from 'drizzle-orm'
 import { db } from '../src/db'
-import { chapters, characters, commentVotes, comments, reviews, stories, users } from '../src/schema'
+import { chapters, characters, commentVotes, comments, reviewReplies, reviews, reviewVotes, stories, users } from '../src/schema'
 
 if (process.env.NODE_ENV === 'production') throw new Error('seed-demo is for development databases only')
 if ((await db.select({ n: sql<number>`count(*)::int` }).from(users).where(like(users.email, '%@demo.local')))[0].n) {
@@ -93,7 +93,21 @@ for (const s of storyIds) for (const u of everyone) {
   const createdAt = between(daysAgo(20)), edited = chance(0.25)
   reviewRows.push({ storyId: s.id, userId: u.id, rating: pick(RATING), body: chance(0.7) ? pick(REVIEW) : '', createdAt, updatedAt: edited ? between(createdAt) : createdAt })
 }
-await db.insert(reviews).values(reviewRows)
+const insertedReviews = await db.insert(reviews).values(reviewRows).returning({ id: reviews.id, storyId: reviews.storyId, userId: reviews.userId, createdAt: reviews.createdAt })
+
+// votes and replies under the reviews (the story's author answers about half of the ones with text)
+const reviewVoteRows: (typeof reviewVotes.$inferInsert)[] = [], reviewReplyRows: (typeof reviewReplies.$inferInsert)[] = []
+for (const r of insertedReviews) {
+  for (const u of everyone) if (u.id !== r.userId && chance(0.25)) reviewVoteRows.push({ reviewId: r.id, userId: u.id, value: chance(0.8) ? 1 : -1 })
+  if (!chance(0.4)) continue
+  const author = storyIds.find(s => s.id === r.storyId)!.author
+  for (let i = 0, n = 1 + Math.floor(rnd() * 2); i < n; i++) {
+    const replier = chance(0.5) ? author : pick(everyone).id
+    reviewReplyRows.push({ reviewId: r.id, userId: replier, body: pick(REPLY), createdAt: between(r.createdAt) })
+  }
+}
+if (reviewVoteRows.length) await db.insert(reviewVotes).values(reviewVoteRows)
+if (reviewReplyRows.length) await db.insert(reviewReplies).values(reviewReplyRows)
 
 // comments, replies, votes
 let nComments = 0, nReplies = 0
@@ -117,5 +131,5 @@ const voteRows: (typeof commentVotes.$inferInsert)[] = []
 for (const c of allComments) for (const u of everyone) if (u.id !== c.userId && chance(0.3)) voteRows.push({ commentId: c.id, userId: u.id, value: chance(0.75) ? 1 : -1 })
 if (voteRows.length) await db.insert(commentVotes).values(voteRows)
 
-console.log(`seeded: ${everyone.length} users, ${SEEDS.length} stories (+${existing.length} existing), ${reviewRows.length} reviews, ${nComments} comments, ${nReplies} replies, ${voteRows.length} votes`)
+console.log(`seeded: ${everyone.length} users, ${SEEDS.length} stories (+${existing.length} existing), ${reviewRows.length} reviews (${reviewVoteRows.length} votes, ${reviewReplyRows.length} replies),${nComments} comments, ${nReplies} replies, ${voteRows.length} votes`)
 await db.$client.end()

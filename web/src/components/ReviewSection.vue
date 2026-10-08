@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Star } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Star } from 'lucide-vue-next'
 import { useRoute } from 'vue-router'
 import { client, ok } from '../api'
 import { fmtDateTime } from '../genre'
@@ -41,6 +41,23 @@ async function send() {
     toast(edit ? 'แก้ไขรีวิวแล้ว' : 'ส่งรีวิวแล้ว')
   } catch (e) { toastError(e) } finally { busy.value = false }
 }
+
+// votes and replies under a review (same rules as chapter comments; replies are one flat list)
+const REPLY_MAX = 1000
+const replyingTo = ref<number | null>(null), replyText = ref(''), confirmReply = ref<number | null>(null)
+const vote = (r: { id: number; score: number; myVote: number | null }, value: -1 | 0 | 1) =>
+  ok(client.api.reviews({ id: r.id }).vote.put({ value })).then(v => Object.assign(r, v), toastError)
+async function sendReply(reviewId: number) {
+  busy.value = true
+  try {
+    await ok(client.api.reviews({ id: reviewId }).replies.post({ body: replyText.value }))
+    replyingTo.value = null; replyText.value = ''; await load()
+  } catch (e) { toastError(e) } finally { busy.value = false }
+}
+async function removeReply(id: number) {
+  try { await ok(client.api['review-replies']({ id }).delete()); confirmReply.value = null; await load() } catch (e) { toastError(e) }
+}
+const voteBtn = (on: boolean) => ['grid size-11 place-items-center rounded-lg hover:bg-fg/5 disabled:opacity-40 sm:size-8', on && 'text-primary']
 
 async function remove(id: number) {
   try {
@@ -109,6 +126,40 @@ async function remove(id: number) {
           </template>
         </div>
         <p v-if="r.body" class="mt-1 whitespace-pre-wrap break-words leading-relaxed">{{ r.body }}</p>
+        <div class="mt-1 flex flex-wrap items-center gap-1">
+          <button type="button" :class="voteBtn(r.myVote === 1)" :disabled="r.userId === auth.user?.id || !auth.user" :aria-pressed="r.myVote === 1" aria-label="รีวิวนี้มีประโยชน์" @click="vote(r, r.myVote === 1 ? 0 : 1)"><ChevronUp class="size-5" aria-hidden="true" /></button>
+          <span class="min-w-4 text-center text-sm tabular-nums" :aria-label="`คะแนน ${r.score}`">{{ r.score }}</span>
+          <button type="button" :class="voteBtn(r.myVote === -1)" :disabled="r.userId === auth.user?.id || !auth.user" :aria-pressed="r.myVote === -1" aria-label="รีวิวนี้ไม่มีประโยชน์" @click="vote(r, r.myVote === -1 ? 0 : -1)"><ChevronDown class="size-5" aria-hidden="true" /></button>
+          <Button v-if="auth.user" variant="ghost" size="sm" @click="replyingTo = replyingTo === r.id ? null : r.id; replyText = ''">ตอบกลับ</Button>
+        </div>
+        <ul v-if="r.replies.length" class="mt-2 space-y-3 border-l-2 border-line pl-3">
+          <li v-for="p in r.replies" :key="p.id">
+            <div class="flex flex-wrap items-center gap-x-2 text-sm">
+              <span class="font-medium">{{ p.userName }}</span>
+              <span v-if="p.isAuthor" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">ผู้แต่ง</span>
+              <span class="muted text-xs">{{ fmtDateTime(p.createdAt) }}</span>
+              <span class="flex-1" />
+              <template v-if="p.canDelete">
+                <Button v-if="confirmReply !== p.id" variant="ghost" size="sm" @click="confirmReply = p.id">ลบ</Button>
+                <template v-else>
+                  <Button variant="danger" size="sm" @click="removeReply(p.id)">ยืนยันลบ</Button>
+                  <Button variant="ghost" size="sm" @click="confirmReply = null">ยกเลิก</Button>
+                </template>
+              </template>
+            </div>
+            <p class="mt-0.5 whitespace-pre-wrap break-words leading-relaxed">{{ p.body }}</p>
+          </li>
+        </ul>
+        <form v-if="replyingTo === r.id" class="mt-2" @submit.prevent="sendReply(r.id)">
+          <Textarea v-model="replyText" :rows="3" placeholder="เขียนตอบกลับ" compact />
+          <div class="mt-2 flex items-center justify-between gap-3">
+            <span :class="['text-xs', replyText.length > REPLY_MAX ? 'text-danger' : 'muted']">{{ REPLY_MAX - replyText.length }}</span>
+            <span class="flex gap-2">
+              <Button variant="ghost" size="sm" @click="replyingTo = null">ยกเลิก</Button>
+              <Button type="submit" size="sm" :loading="busy" :disabled="!replyText.trim() || replyText.length > REPLY_MAX">ส่ง</Button>
+            </span>
+          </div>
+        </form>
       </li>
     </ul>
     <Pager v-if="data" v-model="page" :size="data.size" :total="data.total" />
