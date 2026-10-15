@@ -8,7 +8,8 @@ import BookCover from '../components/BookCover.vue'
 import StoryCard from '../components/StoryCard.vue'
 import Button from '../components/ui/Button.vue'
 import { kanjiFor, parseDb } from '../genre'
-import { isRecent, ratingScore } from '../shelf'
+import { useResume } from '../resume'
+import { allTags, isRecent, ratingScore } from '../shelf'
 import RatingLine from '../components/RatingLine.vue'
 import { useAuth } from '../stores/auth'
 
@@ -24,6 +25,8 @@ const latest = computed(() => [...stories.value].sort((a, b) => time(b) - time(a
 const topRated = computed(() => stories.value.filter(s => s.ratingCount).sort((a, b) => ratingScore(b) - ratingScore(a) || b.ratingCount - a.ratingCount).slice(0, 8))
 // the three books fanned out next to the title (and introduced one by one in the picks section): the best rated once there are enough reviews, otherwise the newest
 const featured = computed(() => (topRated.value.length >= 3 ? topRated.value : latest.value).slice(0, 3))
+const resume = useResume(stories)
+const genres = computed(() => allTags(stories.value))
 const chapterTotal = computed(() => stories.value.reduce((n, s) => n + s.chapterCount, 0))
 const badge = (s: Story) => (s.status === 'completed' ? 'จบแล้ว' : isRecent(s.updatedAt) ? 'อัปเดตใหม่' : '')
 
@@ -109,6 +112,11 @@ onBeforeUnmount(() => mm?.revert())
         <Button v-if="!auth.user" to="/register" variant="outline" size="lg">สมัครสมาชิก</Button>
         <Button v-else to="/following" variant="outline" size="lg">เรื่องที่ติดตาม</Button>
       </div>
+      <router-link v-if="resume" :to="`/story/${resume.story.id}/read/${resume.no}`" class="mt-6 flex max-w-sm items-center gap-3 rounded-xl border border-line bg-surface/80 p-2.5 pr-4 transition-colors hover:border-primary">
+        <div class="w-9 shrink-0"><BookCover :title="resume.story.title" :genre="resume.story.genre" :image="resume.story.coverImage" /></div>
+        <div class="min-w-0"><div class="eyebrow">อ่านต่อ · ตอนที่ {{ resume.no }}</div><div class="truncate font-serif font-bold">{{ resume.story.title }}</div></div>
+        <ArrowRight class="ml-auto size-5 shrink-0" aria-hidden="true" />
+      </router-link>
       <ul v-if="stories.length" class="mt-8 flex flex-wrap gap-2.5 text-sm">
         <li class="chip"><b class="font-serif text-base text-primary">{{ stories.length }}</b> เรื่อง</li>
         <li class="chip"><b class="font-serif text-base text-primary">{{ chapterTotal }}</b> ตอน</li>
@@ -138,7 +146,7 @@ onBeforeUnmount(() => mm?.revert())
       </div>
       <div class="pin space-y-14">
         <article v-for="(s, i) in featured" :key="s.id" class="pick grid items-center gap-6 sm:grid-cols-[minmax(0,230px)_1fr] sm:gap-14 md:grid-cols-[minmax(0,300px)_1fr]">
-          <router-link :to="`/story/${s.id}`" class="pick-cover hero-book relative isolate mx-auto block w-[min(230px,62vw)] sm:mx-0 md:w-[min(300px,calc((100vh-14rem)*.66))]" :aria-label="s.title"><span class="sun-disc breathe !-inset-[22%]" aria-hidden="true" /><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
+          <router-link :to="`/story/${s.id}`" class="pick-cover hero-book relative isolate mx-auto block w-[min(230px,62vw)] sm:mx-0 md:w-[min(300px,calc((100vh-14rem)*.66))]" :aria-label="s.title"><span class="sun-disc breathe !-inset-[8%] md:!-inset-[22%]" aria-hidden="true" /><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
           <div class="pick-text relative">
             <span class="pointer-events-none absolute -right-2 -top-8 hidden select-none font-mincho text-[240px] font-bold leading-none text-primary/[.07] [writing-mode:vertical-rl] md:block" aria-hidden="true">{{ kanjiFor(s.genre) }}</span>
             <div class="eyebrow relative"><span class="font-serif text-primary">{{ String(i + 1).padStart(2, '0') }}</span> / {{ String(featured.length).padStart(2, '0') }} · {{ [s.genre, s.mood].filter(Boolean).join(' · ') }}</div>
@@ -148,6 +156,17 @@ onBeforeUnmount(() => mm?.revert())
             <Button :to="`/story/${s.id}`" class="relative mt-5"><BookOpen class="size-5" />อ่านเรื่องนี้</Button>
           </div>
         </article>
+      </div>
+    </section>
+
+    <!-- by genre -->
+    <section v-if="genres.length > 1" aria-labelledby="genre-h">
+      <div class="head mb-4 flex items-baseline gap-3">
+        <span class="font-mincho text-2xl font-bold text-primary/70" aria-hidden="true">分類</span>
+        <h2 id="genre-h" class="font-serif text-2xl font-bold">เลือกอ่านตามแนว</h2>
+      </div>
+      <div class="reveal flex flex-wrap gap-2.5">
+        <router-link v-for="g in genres" :key="g" :to="`/story?genre=${encodeURIComponent(g)}`" class="chip min-h-11 items-center transition-colors hover:border-primary hover:text-primary">{{ g }}</router-link>
       </div>
     </section>
 
