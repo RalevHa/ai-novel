@@ -29,11 +29,14 @@ async function logout() {
   await auth.logout()
   router.push('/')
 }
+// what to call the management area for this person (the same /admin shell serves both roles)
+const areaName = computed(() => (auth.isAdmin ? 'ผู้ดูแลระบบ' : 'นักเขียน'))
+// grouped: management (admins/writers only) apart from what every reader has
 const menu = computed<MenuEntry[]>(() => [
-  ...(auth.canWrite ? [{ label: 'จัดการนิยาย', icon: Settings, to: '/admin/stories' }] : []),
-  { label: 'เรื่องที่ติดตาม', icon: BookmarkCheck, to: '/following' },
+  ...(auth.canWrite ? [{ label: auth.isAdmin ? 'จัดการระบบ' : 'จัดการนิยายของฉัน', icon: Settings, to: '/admin/stories', section: areaName.value }] : []),
+  { label: 'เรื่องที่ติดตาม', icon: BookmarkCheck, to: '/following', section: auth.canWrite ? 'ผู้อ่าน' : undefined },
   { label: 'โปรไฟล์ของฉัน', icon: UserRound, to: '/profile' },
-  { label: 'ออกจากระบบ', icon: LogOut, action: logout },
+  { label: 'ออกจากระบบ', icon: LogOut, action: logout, section: auth.canWrite ? 'บัญชี' : undefined },
 ])
 const nav = computed(() => [
   { to: '/admin/stories', label: 'นิยาย', icon: LibraryBig },
@@ -49,7 +52,7 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
   <!-- admin shell: side rail on desktop, top bar + bottom nav on phones -->
   <div v-if="inAdmin" class="min-h-dvh md:pl-56">
     <aside class="fixed inset-y-0 left-0 hidden w-56 flex-col border-r border-line bg-surface p-3 md:flex">
-      <router-link to="/story" class="mb-3 flex items-center gap-3 p-2" aria-label="จัดการ ไปหน้าอ่าน"><span class="seal" aria-hidden="true" /><span class="font-medium">จัดการ</span></router-link>
+      <router-link to="/story" class="mb-3 flex items-center gap-3 p-2" :aria-label="`${areaName} ไปหน้าอ่าน`"><span class="seal" aria-hidden="true" /><span class="font-medium">{{ areaName }}</span></router-link>
       <nav class="flex flex-col gap-1">
         <router-link v-for="n in nav" :key="n.to" :to="n.to" :class="link" active-class="bg-primary/10 font-medium text-primary"><component :is="n.icon" class="size-5" />{{ n.label }}<span v-if="'badge' in n && n.badge" class="ml-auto rounded-full bg-danger px-1.5 text-[11px] text-white">{{ n.badge }}</span></router-link>
       </nav>
@@ -61,7 +64,7 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
     </aside>
 
     <header class="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 md:hidden">
-      <span class="seal" aria-hidden="true" /><span class="flex-1 font-medium">จัดการ</span>
+      <span class="seal" aria-hidden="true" /><span class="flex-1 font-medium">{{ areaName }}</span>
       <Button variant="ghost" size="icon" :aria-label="isDark ? 'ธีมสว่าง' : 'ธีมมืด'" @click="toggleTheme"><Sun v-if="isDark" class="size-5" /><Moon v-else class="size-5" /></Button>
       <Button variant="ghost" size="icon" aria-label="ออกจากระบบ" @click="logout"><LogOut class="size-5" /></Button>
     </header>
