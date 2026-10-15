@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ArrowRight, Search, X } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
@@ -8,20 +9,25 @@ import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { fmtDate, parseDb } from '../genre'
 import { lsGet, lsSet } from '../ls'
+import { useResume } from '../resume'
 import { allTags, isRecent, shelf, SORTS, type Sort } from '../shelf'
 import { useAuth } from '../stores/auth'
 import { useBookmarks } from '../stores/bookmarks'
 
-const auth = useAuth()
+const auth = useAuth(), route = useRoute()
 const marks = useBookmarks()
 const load = () => ok(client.api.stories.get())
 type Story = Awaited<ReturnType<typeof load>>[number]
-const stories = ref<Story[]>([]), loading = ref(true), error = ref(''), genre = ref<string | null>(null)
+const stories = ref<Story[]>([]), loading = ref(true), error = ref(''), genre = ref<string | null>(typeof route.query.genre === 'string' ? route.query.genre : null)
 
 const genres = computed(() => allTags(stories.value))
 // search + order are applied in the browser (the shelf is not paginated); the order is remembered
-const query = ref(''), sort = ref<Sort>(SORTS.some(x => x.k === lsGet('homeSort')) ? lsGet('homeSort') as Sort : 'updated')
+// links from elsewhere (header search, landing genre chips, ...) can preset these: /story?q=..&genre=..&sort=..
+const qs = typeof route.query.sort === 'string' ? route.query.sort : lsGet('homeSort')
+const query = ref(typeof route.query.q === 'string' ? route.query.q : ''), sort = ref<Sort>(SORTS.some(x => x.k === qs) ? qs as Sort : 'updated')
+const searchEl = ref<HTMLInputElement>()
 watch(sort, v => lsSet('homeSort', v))
+watch(() => route.query.search, async v => { if (v !== undefined) { await nextTick(); searchEl.value?.focus() } }) // header search icon while already on this page
 const mine = ref(false) // only the stories this reader follows
 const myStories = computed(() => stories.value.filter(s => marks.has(s.id)).length)
 const shown = computed(() => shelf(stories.value, { q: query.value, genre: genre.value, sort: sort.value, ids: mine.value ? new Set(marks.ids) : null }))
@@ -30,24 +36,14 @@ const clearFilters = () => { query.value = ''; genre.value = null; mine.value = 
 const badge = (s: Story) => s.status === 'completed' ? 'จบแล้ว' : isRecent(s.updatedAt) ? 'อัปเดตใหม่' : ''
 const latest = computed(() => stories.value.map(s => parseDb(s.updatedAt)).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0])
 
-// resume strip: signed in = what the account read most recently (any device), otherwise this browser's last read
-const remote = ref<{ storyId: number; no: number }[]>([]) // newest first
-const resume = computed(() => {
-  const r = remote.value.find(p => stories.value.some(s => s.id === p.storyId))
-  if (r) return { story: stories.value.find(s => s.id === r.storyId)!, no: r.no }
-  try {
-    const l = JSON.parse(lsGet('lastRead') || 'null')
-    const s = l && stories.value.find(x => x.id === l.id)
-    return s ? { story: s, no: l.no as number } : null
-  } catch { return null }
-})
+const resume = useResume(stories)
 const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full border px-3.5 py-1.5 text-sm transition-colors sm:min-h-9', on ? 'border-primary bg-primary text-on-primary' : 'border-line hover:bg-fg/5']
 
 onMounted(async () => {
   try { stories.value = await load() } catch (e) { error.value = (e as Error).message }
   loading.value = false
   marks.load()
-  if (auth.user) remote.value = await ok(client.api.me.progress.get()).catch(() => [])
+  if (route.query.search !== undefined) { await nextTick(); searchEl.value?.focus() } // the header's search icon
 })
 </script>
 
@@ -72,7 +68,7 @@ onMounted(async () => {
   <div v-if="stories.length > 1" class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
     <div class="relative flex-1">
       <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg/60" aria-hidden="true" />
-      <input v-model="query" type="text" inputmode="search" autocomplete="off" aria-label="ค้นหานิยาย" placeholder="ค้นหาชื่อเรื่อง แนว หรืออารมณ์"
+      <input ref="searchEl" v-model="query" type="text" inputmode="search" autocomplete="off" aria-label="ค้นหานิยาย" placeholder="ค้นหาชื่อเรื่อง แนว หรืออารมณ์"
         class="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-11 outline-none placeholder:text-fg/40 focus:border-primary focus:ring-2 focus:ring-primary/25" />
       <button v-if="query" type="button" class="absolute inset-y-0 right-0 grid w-11 place-items-center text-fg/60 hover:text-fg" aria-label="ล้างคำค้นหา" @click="query = ''"><X class="size-4" /></button>
     </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, BookmarkCheck, ExternalLink, Flag, Globe, LibraryBig, LogOut, Moon, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
+import { Bell, BookmarkCheck, ExternalLink, Flag, Globe, LibraryBig, LogOut, Moon, Search, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
 import Toaster from './components/ui/Toaster.vue'
@@ -86,6 +86,7 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
         </router-link>
         <router-link to="/story" class="hit ml-1 rounded-lg px-3 py-2 text-sm hover:bg-fg/5" active-class="font-medium text-primary">นิยาย</router-link>
         <div class="flex-1" />
+        <Button variant="ghost" size="icon" to="/story?search" aria-label="ค้นหานิยาย"><Search class="size-5" /></Button>
         <Button variant="ghost" size="icon" :aria-label="isDark ? 'เปลี่ยนเป็นธีมสว่าง' : 'เปลี่ยนเป็นธีมมืด'" @click="toggleTheme"><Sun v-if="isDark" class="size-5" /><Moon v-else class="size-5" /></Button>
         <Button v-if="auth.user" variant="ghost" size="icon" to="/notifications" class="relative" :aria-label="bell.unread ? `การแจ้งเตือน (${bell.unread} ใหม่)` : 'การแจ้งเตือน'">
           <Bell class="size-5" /><span v-if="bell.unread" class="absolute right-1 top-1 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 text-white">{{ bell.unread > 9 ? '9+' : bell.unread }}</span>
