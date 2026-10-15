@@ -499,7 +499,9 @@ const meRoutes = new Elysia({ prefix: '/me' })
         indent: t.Optional(t.Union([t.Literal('off'), t.Literal('on')])),
       }, { additionalProperties: false }),
     })
-    .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt })
+    .get('/progress', ({ me }) => db.select({ storyId: readingProgress.storyId, no: readingProgress.no, pos: readingProgress.pos, updatedAt: readingProgress.updatedAt,
+      title: sql<string | null>`(select chapters.title from chapters where chapters.story_id = reading_progress.story_id and chapters.no = reading_progress.no and ${visibleSql})`, // the history page names the chapter
+    })
       .from(readingProgress).where(eq(readingProgress.userId, me!.id)).orderBy(desc(readingProgress.updatedAt)))
     .put('/progress/:id', async ({ params, body, me, status }) => {
       if (!(await isLive(params.id, body.no))) return status(404, { error: 'ไม่พบข้อมูล' })
@@ -508,6 +510,9 @@ const meRoutes = new Elysia({ prefix: '/me' })
         .onConflictDoUpdate({ target: [readingProgress.userId, readingProgress.storyId], set: { no: body.no, pos, updatedAt: sql`now()` } })
       return { ok: true }
     }, { ...id, body: t.Object({ no: t.Integer({ minimum: 1 }), pos: t.Optional(t.Number({ minimum: 0, maximum: 1 })) }) })
+    // reading history: forget one story / all of them (the ticks on read chapters are separate and stay)
+    .delete('/progress/:id', async ({ params, me }) => { await db.delete(readingProgress).where(and(eq(readingProgress.userId, me!.id), eq(readingProgress.storyId, params.id))); return { ok: true } }, id)
+    .delete('/progress', async ({ me }) => { await db.delete(readingProgress).where(eq(readingProgress.userId, me!.id)); return { ok: true } })
     .get('/bookmarks', async ({ me }) => (await db.select({ id: bookmarks.storyId }).from(bookmarks).where(eq(bookmarks.userId, me!.id)).orderBy(desc(bookmarks.createdAt))).map(r => r.id))
     // the "following" page: each followed story with this reader's progress (chapters read among the ones they can see, where they stopped)
     .get('/following', ({ me }) => db.select({

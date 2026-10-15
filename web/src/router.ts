@@ -30,6 +30,7 @@ const router = createRouter({
     { path: '/forgot', component: () => import('./pages/ForgotPasswordPage.vue'), meta: { title: 'ลืมรหัสผ่าน' } },
     { path: '/author/:id', component: () => import('./pages/AuthorPage.vue') },
     { path: '/following', component: () => import('./pages/FollowingPage.vue'), meta: { user: true, title: 'เรื่องที่ติดตาม' } },
+    { path: '/history', component: () => import('./pages/HistoryPage.vue'), meta: { user: true, title: 'ประวัติการอ่าน' } },
     { path: '/notifications', component: () => import('./pages/NotificationsPage.vue'), meta: { user: true, title: 'การแจ้งเตือน' } },
     { path: '/profile', component: () => import('./pages/ProfilePage.vue'), meta: { user: true, title: 'โปรไฟล์ของฉัน' } },
     { path: '/admin/stories', component: () => import('./pages/AdminStories.vue'), meta: { staff: true, title: 'จัดการนิยาย' } },
