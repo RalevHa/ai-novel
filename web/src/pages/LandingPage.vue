@@ -7,7 +7,7 @@ import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
 import StoryCard from '../components/StoryCard.vue'
 import Button from '../components/ui/Button.vue'
-import { parseDb } from '../genre'
+import { kanjiFor, parseDb } from '../genre'
 import { isRecent, ratingScore } from '../shelf'
 import RatingLine from '../components/RatingLine.vue'
 import { useAuth } from '../stores/auth'
@@ -130,19 +130,20 @@ onBeforeUnmount(() => mm?.revert())
 
   <div class="space-y-16 pb-6 pt-8 md:space-y-20 md:pt-12">
     <!-- picks: scrolling introduces one book at a time (pinned on desktop, see motion()) -->
-    <section v-if="featured.length" ref="stage" aria-labelledby="pick-h">
+    <section v-if="featured.length" ref="stage" class="relative isolate" aria-labelledby="pick-h">
+      <div class="petals" aria-hidden="true"><i v-for="n in 14" :key="n" :style="{ left: `${(n * 37) % 100}%`, '--s': `${7 + (n % 3) * 4}px`, '--d': `${10 + (n % 5) * 2.5}s`, '--w': `-${(n * 1.9) % 12}s` }" /></div>
       <div class="head mb-6 flex items-baseline gap-3">
         <span class="font-mincho text-2xl font-bold text-primary/70" aria-hidden="true">推薦</span>
         <h2 id="pick-h" class="font-serif text-2xl font-bold">แนะนำให้อ่าน</h2>
       </div>
       <div class="pin space-y-14">
-        <article v-for="(s, i) in featured" :key="s.id" class="pick grid items-center gap-6 sm:grid-cols-[minmax(0,230px)_1fr] sm:gap-14">
-          <router-link :to="`/story/${s.id}`" class="pick-cover hero-book mx-auto block w-[min(230px,62vw)] sm:mx-0" :aria-label="s.title"><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
+        <article v-for="(s, i) in featured" :key="s.id" class="pick grid items-center gap-6 sm:grid-cols-[minmax(0,230px)_1fr] sm:gap-14 md:grid-cols-[minmax(0,300px)_1fr]">
+          <router-link :to="`/story/${s.id}`" class="pick-cover hero-book relative isolate mx-auto block w-[min(230px,62vw)] sm:mx-0 md:w-[min(300px,calc((100vh-14rem)*.66))]" :aria-label="s.title"><span class="sun-disc breathe !-inset-[22%]" aria-hidden="true" /><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
           <div class="pick-text relative">
-            <span class="pointer-events-none absolute -top-10 right-0 select-none font-serif text-[88px] font-bold leading-none text-primary/[.08]" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
-            <div class="eyebrow relative">{{ [s.genre, s.mood].filter(Boolean).join(' · ') }}</div>
-            <h3 class="relative mt-2 font-serif text-3xl font-bold leading-tight"><router-link :to="`/story/${s.id}`" class="hover:text-primary">{{ s.title }}</router-link></h3>
-            <p v-if="s.synopsis" class="line-clamp-4 relative mt-3 max-w-[52ch] leading-[1.8] text-fg/80">{{ s.synopsis }}</p>
+            <span class="pointer-events-none absolute -right-2 -top-8 hidden select-none font-mincho text-[240px] font-bold leading-none text-primary/[.07] [writing-mode:vertical-rl] md:block" aria-hidden="true">{{ kanjiFor(s.genre) }}</span>
+            <div class="eyebrow relative"><span class="font-serif text-primary">{{ String(i + 1).padStart(2, '0') }}</span> / {{ String(featured.length).padStart(2, '0') }} · {{ [s.genre, s.mood].filter(Boolean).join(' · ') }}</div>
+            <h3 class="relative mt-2 font-serif text-3xl font-bold leading-tight md:text-4xl"><router-link :to="`/story/${s.id}`" class="hover:text-primary">{{ s.title }}</router-link></h3>
+            <p v-if="s.synopsis" class="line-clamp-4 relative mt-3 max-w-[52ch] leading-[1.8] text-fg/80 md:mt-4 md:text-lg">{{ s.synopsis }}</p>
             <div class="relative mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg/75"><span>{{ s.chapterCount }} ตอน</span><span v-if="s.authorName">โดย {{ s.authorName }}</span><RatingLine :rating="s.rating" :count="s.ratingCount" /></div>
             <Button :to="`/story/${s.id}`" class="relative mt-5"><BookOpen class="size-5" />อ่านเรื่องนี้</Button>
           </div>

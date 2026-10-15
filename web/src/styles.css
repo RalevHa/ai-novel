@@ -79,10 +79,22 @@
   .rise { animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
   @keyframes rise { from { opacity: 0; translate: 0 18px; } to { opacity: 1; translate: 0 0; } }
   /* the picks section is pinned on desktop (see LandingPage motion()): the books stack in one place and GSAP moves them */
-  .pinned { display: flex; flex-direction: column; min-height: calc(100vh - 72px); }
-  .pinned .pin { position: relative; height: min(460px, calc(100vh - 14rem)); margin-block: auto; }
+  .pinned { display: flex; flex-direction: column; justify-content: center; min-height: calc(100vh - 72px); }
+  .pinned .pin { position: relative; height: min(520px, calc(100vh - 12rem)); }
   .pinned .pick { position: absolute; inset: 0; }
-  @media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
+  /* sakura petals drifting down the pinned picks: desktop only, behind the content (the section is `isolate`) */
+  .petals { @apply pointer-events-none absolute inset-0 -z-10 hidden overflow-hidden md:block; }
+  .petals i { position: absolute; top: 0; width: var(--s); height: calc(var(--s) * .7); border-radius: 80% 0 80% 0; background: rgb(var(--c-primary) / .4); animation: petal var(--d) linear var(--w) infinite; }
+  @keyframes petal {
+    0% { translate: 0 -5vh; rotate: 0deg; }
+    25% { translate: 36px 25vh; rotate: 120deg; }
+    50% { translate: -14px 50vh; rotate: 240deg; }
+    75% { translate: 30px 75vh; rotate: 330deg; }
+    100% { translate: 0 105vh; rotate: 450deg; }
+  }
+  .breathe { animation: breathe 7s ease-in-out infinite alternate; }
+  @keyframes breathe { from { scale: .94; opacity: .8; } to { scale: 1.06; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .rise { animation: none; } .breathe { animation: none; } .petals { display: none; } }
 
   /* reader */
   .reader-body { font-size: var(--reader-size, 19px); line-height: var(--reader-lh, 2.05); }
