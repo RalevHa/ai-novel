@@ -146,7 +146,7 @@ onBeforeUnmount(() => mm?.revert())
       </div>
       <div class="pin space-y-14">
         <article v-for="(s, i) in featured" :key="s.id" class="pick grid items-center gap-6 sm:grid-cols-[minmax(0,230px)_1fr] sm:gap-14 md:grid-cols-[minmax(0,300px)_1fr]">
-          <router-link :to="`/story/${s.id}`" class="pick-cover hero-book relative isolate mx-auto block w-[min(230px,62vw)] sm:mx-0 md:w-[min(300px,calc((100vh-14rem)*.66))]" :aria-label="s.title"><span class="sun-disc breathe !-inset-[22%]" aria-hidden="true" /><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
+          <router-link :to="`/story/${s.id}`" class="pick-cover hero-book relative isolate mx-auto block w-[min(230px,62vw)] sm:mx-0 md:w-[min(300px,calc((100vh-14rem)*.66))]" :aria-label="s.title"><span class="sun-disc breathe !-inset-[8%] md:!-inset-[22%]" aria-hidden="true" /><BookCover :title="s.title" :genre="s.genre" :image="s.coverImage" /></router-link>
           <div class="pick-text relative">
             <span class="pointer-events-none absolute -right-2 -top-8 hidden select-none font-mincho text-[240px] font-bold leading-none text-primary/[.07] [writing-mode:vertical-rl] md:block" aria-hidden="true">{{ kanjiFor(s.genre) }}</span>
             <div class="eyebrow relative"><span class="font-serif text-primary">{{ String(i + 1).padStart(2, '0') }}</span> / {{ String(featured.length).padStart(2, '0') }} · {{ [s.genre, s.mood].filter(Boolean).join(' · ') }}</div>

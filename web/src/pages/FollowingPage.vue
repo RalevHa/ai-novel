@@ -61,7 +61,7 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
 
 <template>
   <header class="mb-6 flex flex-wrap items-end gap-3">
-    <div class="min-w-0 flex-1">
+    <div class="min-w-0 basis-full sm:flex-1 sm:basis-0">
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">เรื่องที่ติดตาม</h1>
       <p v-if="!loading && rows.length" class="muted mt-1 text-sm">{{ rows.length }} เรื่อง · ยังมีตอนที่ไม่ได้อ่าน {{ counts.unread }} เรื่อง</p>
     </div>

@@ -90,12 +90,12 @@ onMounted(async () => {
       <p class="muted mt-1 text-sm">โดย <router-link :to="`/author/${story.authorId}`" class="-my-3 inline-block py-3 text-primary underline underline-offset-2">{{ story.authorName }}</router-link></p>
       <p class="mb-6 mt-4 max-w-[62ch] whitespace-pre-wrap leading-[1.85] text-fg/85">{{ story.synopsis }}</p>
 
-      <div ref="cta" :class="[readCount ? 'mb-5' : 'mb-10', 'flex flex-wrap gap-3']">
-        <Button v-if="startNo" size="lg" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
+      <div ref="cta" :class="[readCount ? 'mb-5' : 'mb-10', 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] gap-2 sm:flex sm:flex-wrap sm:gap-3']">
+        <Button v-if="startNo" size="lg" class="col-span-4 sm:col-span-1 sm:w-auto" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
         <Button v-if="nos.length > 1" variant="outline" size="lg" :to="`/story/${id}/read/${nos[nos.length - 1]}`">ตอนล่าสุด</Button>
         <Button variant="outline" size="lg" :aria-pressed="marks.has(Number(id))" @click="follow"><BookmarkCheck v-if="marks.has(Number(id))" class="size-5" /><BookmarkPlus v-else class="size-5" />{{ marks.has(Number(id)) ? 'ติดตามแล้ว' : 'ติดตาม' }}</Button>
-        <Button v-if="nos.length" variant="ghost" size="lg" :href="`/api/stories/${id}/epub`"><Download class="size-5" />EPUB</Button>
-        <Button v-if="nos.length" variant="ghost" size="lg" aria-label="คัดลอกลิงก์ RSS เพื่อติดตามตอนใหม่" @click="copyFeed"><Rss class="size-5" />RSS</Button>
+        <Button v-if="nos.length" variant="ghost" size="lg" class="!px-3 sm:!px-5" aria-label="ดาวน์โหลด EPUB" :href="`/api/stories/${id}/epub`"><Download class="size-5" /><span class="hidden sm:inline">EPUB</span></Button>
+        <Button v-if="nos.length" variant="ghost" size="lg" class="!px-3 sm:!px-5" aria-label="คัดลอกลิงก์ RSS เพื่อติดตามตอนใหม่" @click="copyFeed"><Rss class="size-5" /><span class="hidden sm:inline">RSS</span></Button>
       </div>
 
       <div v-if="readCount" class="mb-8 max-w-sm">
