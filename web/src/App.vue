@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, BookmarkCheck, ExternalLink, Flag, Globe, History, LibraryBig, LogOut, Moon, Search, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
+import { Bell, BookmarkCheck, Bookmark, ExternalLink, Flag, Globe, History, LibraryBig, LogOut, Moon, Search, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
 import Toaster from './components/ui/Toaster.vue'
@@ -35,6 +35,7 @@ const areaName = computed(() => (auth.isAdmin ? 'ผู้ดูแลระบ�
 const menu = computed<MenuEntry[]>(() => [
   ...(auth.canWrite ? [{ label: auth.isAdmin ? 'จัดการระบบ' : 'จัดการนิยายของฉัน', icon: Settings, to: '/admin/stories', section: areaName.value }] : []),
   { label: 'เรื่องที่ติดตาม', icon: BookmarkCheck, to: '/following', section: auth.canWrite ? 'ผู้อ่าน' : undefined },
+  { label: 'ตอนที่บุ๊กมาร์ก', icon: Bookmark, to: '/bookmarks' },
   { label: 'ประวัติการอ่าน', icon: History, to: '/history' },
   { label: 'โปรไฟล์ของฉัน', icon: UserRound, to: '/profile' },
   { label: 'ออกจากระบบ', icon: LogOut, action: logout, section: auth.canWrite ? 'บัญชี' : undefined },

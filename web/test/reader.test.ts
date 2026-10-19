@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { chromeHidden, leadingValue, readingMinutes, swipeDir } from '../src/reader'
+import { chromeHidden, leadingValue, readingMinutes, swipeDir, isCenterTap } from '../src/reader'
 
 test('swipeDir: needs a long, mostly horizontal move that does not start at the screen edge', () => {
   expect(swipeDir(-120, 10, 200, 390)).toBe(1) // left = next
@@ -28,4 +28,10 @@ test('readingMinutes: about 1,000 Thai characters per minute, images and markup 
 test('leadingValue: tight/loose are fixed, normal depends on the typeface', () => {
   expect([leadingValue('tight', 'serif'), leadingValue('loose', 'sans')]).toEqual([1.8, 2.3])
   expect([leadingValue('normal', 'serif'), leadingValue('normal', 'sans')]).toEqual([2.05, 1.95])
+})
+
+test('isCenterTap: a still touch in the middle three fifths', () => {
+  expect(isCenterTap(2, 3, 195, 390)).toBe(true)
+  expect(isCenterTap(0, 40, 195, 390)).toBe(false) // a scroll
+  expect(isCenterTap(0, 0, 40, 390)).toBe(false) // left edge zone
 })
