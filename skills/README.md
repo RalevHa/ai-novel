@@ -13,3 +13,5 @@ tricks, SQL optimizations, API/UI patterns, deployment and performance solutions
 ## Index
 
 <!-- Add one line per Skill: - [Title](file.md) — one-line hook -->
+- [Management list pages mirror HistoryPage](management-list-pages.md) — checkbox select mode + confirm dialog for any saved-items page
+- [Per-chapter user data and the reader bottom bar](chapter-user-data.md) — key by chapter id, API shape, comments sheet, tap-to-toggle bars

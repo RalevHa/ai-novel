@@ -38,6 +38,8 @@
   /* the reader's own toolbar (chapter picker, font settings) is pinned under the header and comes and goes with it */
   .reader-bar { @apply transition-transform duration-200 motion-reduce:transition-none; }
   html[data-chrome='hidden'] .reader-bar:not(:focus-within) { transform: translateY(calc(-100% - 60px)); }
+  .reader-foot { @apply transition-transform duration-200 motion-reduce:transition-none; }
+  html[data-chrome='hidden'] .reader-foot:not(:focus-within) { transform: translateY(100%); }
   .hit { @apply relative after:absolute after:-inset-2 after:content-['']; }
   /* the glyph is generated content: it is decoration, not text that links containing it must be named after */
   .seal::before { content: '物'; }

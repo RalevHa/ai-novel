@@ -32,6 +32,11 @@ export function swipeDir(dx: number, dy: number, startX: number, width: number, 
   return dx < 0 ? 1 : -1
 }
 
+/** A tap (barely moved) in the middle of the screen: it shows or hides the bars. The outer fifths are left alone. */
+export function isCenterTap(dx: number, dy: number, startX: number, width: number, slop = 10) {
+  return Math.hypot(dx, dy) < slop && startX > width * 0.2 && startX < width * 0.8
+}
+
 /** Header visibility while reading: gone when scrolling down, back when scrolling up or near the top. `dy` = scroll change since last event. */
 export function chromeHidden(hidden: boolean, y: number, dy: number) {
   if (y < 80) return false

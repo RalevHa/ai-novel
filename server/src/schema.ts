@@ -96,6 +96,20 @@ export const chapterReads = pgTable('chapter_reads', {
   readAt: timestamp('read_at').notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.userId, t.storyId, t.no] })])
 
+// "likes" on a chapter: one per reader (unliking deletes the row). Keyed by chapter id so deleting/renumbering chapters needs no fix-up.
+export const chapterLikes = pgTable('chapter_likes', {
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.chapterId, t.userId] })])
+
+// chapters a signed-in reader saved to come back to ("my bookmarks"). Keyed by chapter id like likes.
+export const chapterBookmarks = pgTable('chapter_bookmarks', {
+  chapterId: integer('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.chapterId, t.userId] })])
+
 // the text a chapter had before each overwrite, so a bad edit or rewrite can be undone
 export const chapterVersions = pgTable('chapter_versions', {
   id: serial('id').primaryKey(),

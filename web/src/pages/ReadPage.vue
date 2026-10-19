@@ -2,16 +2,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/vue'
-import { ArrowUp, ChevronLeft, ChevronRight, List, Pause, Play, Square, Type, Volume2 } from 'lucide-vue-next'
+import { ArrowUp, BookmarkCheck, BookmarkPlus, ChevronLeft, ChevronRight, Heart, List, MessageSquare, Pause, Play, Square, Type, Volume2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import ChapterSelect from '../components/ChapterSelect.vue'
 import CommentSection from '../components/CommentSection.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
+import Modal from '../components/ui/Modal.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { stripChapterPrefix } from '../genre'
 import { FINISHED, READ_AT, RESTORE_MIN, scrollFraction, scrollTarget } from '../readPos'
-import { chromeHidden, INDENT_OPTIONS, LEADING_OPTIONS, leadingValue, MEASURE_OPTIONS, MEASURES, PARA_OPTIONS, paraValue, readingMinutes, swipeDir, type Indent, type Leading, type Measure, type Para } from '../reader'
+import { chromeHidden, INDENT_OPTIONS, LEADING_OPTIONS, leadingValue, MEASURE_OPTIONS, MEASURES, PARA_OPTIONS, paraValue, readingMinutes, isCenterTap, swipeDir, type Indent, type Leading, type Measure, type Para } from '../reader'
 import { countFinish, countView, flush, getPos, markRead, savePos } from '../readState'
 import { setTitle } from '../title'
 import { RATES, useSpeech } from '../tts'
@@ -19,9 +20,11 @@ import { toast } from '../toast'
 import { renderChapter } from '../markdown'
 import { lsGet, lsSet } from '../ls'
 import { savePrefs } from '../prefs'
+import { useAuth } from '../stores/auth'
 import { setTheme, theme, THEMES, type ThemeName } from '../theme'
 
 const route = useRoute(), router = useRouter()
+const auth = useAuth()
 const id = computed(() => route.params.id as string)
 const no = computed(() => Number(route.params.no))
 
@@ -50,6 +53,39 @@ watch(indent, v => { lsSet('readerIndent', v); savePrefs() })
 const idx = computed(() => nos.value.indexOf(no.value))
 const prev = computed(() => idx.value > 0 ? nos.value[idx.value - 1] : null)
 const next = computed(() => idx.value >= 0 && idx.value < nos.value.length - 1 ? nos.value[idx.value + 1] : null)
+
+// bottom bar: bookmark this chapter (the story's marked chapter numbers load once per story), jump to the (folded) comments
+const marked = ref(new Set<number>())
+watch([id, () => auth.user], async () => {
+  marked.value = new Set()
+  if (auth.user) try { marked.value = new Set(await ok(client.api.me['chapter-bookmarks']({ id: id.value }).get())) } catch { /* the button just shows unmarked */ }
+}, { immediate: true })
+async function bookmark() {
+  if (!auth.user) { toast('เข้าสู่ระบบก่อนจึงจะบุ๊กมาร์กตอนได้'); router.push({ path: '/login', query: { next: route.fullPath } }); return }
+  const n = no.value, on = !marked.value.has(n), set = (v: boolean) => { const s = new Set(marked.value); v ? s.add(n) : s.delete(n); marked.value = s }
+  set(on)
+  try {
+    const ch = client.api.me['chapter-bookmarks']({ id: id.value })({ no: n })
+    await ok(on ? ch.put() : ch.delete())
+    toast(on ? 'บุ๊กมาร์กตอนนี้แล้ว' : 'เอาบุ๊กมาร์กออกแล้ว')
+  } catch (e) { set(!on); toast((e as Error).message, 'error') }
+}
+// likes on this chapter; the heart flips at once and is put back if the server refuses
+const likes = ref({ count: 0, liked: false })
+watch([id, no], async () => {
+  likes.value = { count: 0, liked: false }
+  try { likes.value = await ok(client.api.stories({ id: id.value }).chapters({ no: no.value }).likes.get()) } catch { /* the heart just shows 0 */ }
+}, { immediate: true })
+async function like() {
+  if (!auth.user) { toast('เข้าสู่ระบบก่อนจึงจะกดถูกใจได้'); router.push({ path: '/login', query: { next: route.fullPath } }); return }
+  const before = likes.value, on = !before.liked
+  likes.value = { count: before.count + (on ? 1 : -1), liked: on }
+  try {
+    const ch = client.api.stories({ id: id.value }).chapters({ no: no.value })
+    likes.value = await ok(on ? ch.like.put() : ch.like.delete())
+  } catch (e) { likes.value = before; toast((e as Error).message, 'error') }
+}
+const commentsOpen = ref(false) // comments in a sheet over the page, so the reader's place in the text is never moved
 
 // read aloud: when a chapter ends, carry on with the next one (the listener started it, so the browser allows it)
 const article = ref<HTMLElement | null>(null)
@@ -162,22 +198,24 @@ const onScroll = () => {
   savePos(sid(), no.value, f >= FINISHED ? 0 : f) // a finished chapter reopens at the top
   if (f >= READ_AT || endVisible()) finish(sid(), no.value)
 }
-// swipe left / right to change chapter (touch screens); ignores gestures that start on controls or while text is selected
+// swipe left / right to change chapter, tap the middle to toggle the bars (touch screens); ignores gestures that start on controls or while text is selected
 let touchStart: { x: number; y: number } | null = null
 const onTouchStart = (e: TouchEvent) => {
   const t = e.touches[0]
-  touchStart = e.touches.length === 1 && !(e.target as HTMLElement).closest('input, textarea, select, button, a, figure, [data-comments], [role=listbox], [role=dialog], [contenteditable]') ? { x: t.clientX, y: t.clientY } : null
+  touchStart = e.touches.length === 1 && !(e.target as HTMLElement).closest('input, textarea, select, button, a, figure, .site-header, .reader-bar, .reader-foot, [data-comments], [role=listbox], [role=dialog], [contenteditable]') ? { x: t.clientX, y: t.clientY } : null
 }
 const onTouchEnd = (e: TouchEvent) => {
   const s = touchStart; touchStart = null
   if (!s || getSelection()?.toString()) return
   const t = e.changedTouches[0]
-  const d = swipeDir(t.clientX - s.x, t.clientY - s.y, s.x, innerWidth)
+  const dx = t.clientX - s.x, dy = t.clientY - s.y
+  if (isCenterTap(dx, dy, s.x, innerWidth)) { setChrome(!hidden); return } // tap the middle: bring the bars back (or put them away)
+  const d = swipeDir(dx, dy, s.x, innerWidth)
   if (d) go(d > 0 ? next.value : prev.value)
 }
 const onHide = () => { if (document.visibilityState === 'hidden') flush() }
 const onKey = (e: KeyboardEvent) => {
-  if ((e.target as HTMLElement)?.closest('input, textarea, [contenteditable]') || e.metaKey || e.ctrlKey) return
+  if ((e.target as HTMLElement)?.closest('input, textarea, [contenteditable]') || e.metaKey || e.ctrlKey || commentsOpen.value) return
   if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) userMoved = true
   if (e.key === 'ArrowLeft') go(prev.value)
   if (e.key === 'ArrowRight') go(next.value)
@@ -203,7 +241,7 @@ onBeforeUnmount(() => {
   <Bar v-if="loading" />
   <p v-if="error" class="mx-auto max-w-[680px] rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">{{ error }}</p>
 
-  <div v-if="chapter" class="mx-auto max-w-[var(--reader-w,680px)] pb-6" :style="{ '--reader-size': size + 'px', '--reader-w': MEASURES[measure] + 'px', '--reader-lh': leadingValue(leading, face), '--reader-para': paraValue(para) + 'em', '--reader-indent': indent === 'on' ? '2em' : '0' }">
+  <div v-if="chapter" class="mx-auto max-w-[var(--reader-w,680px)] pb-20" :style="{ '--reader-size': size + 'px', '--reader-w': MEASURES[measure] + 'px', '--reader-lh': leadingValue(leading, face), '--reader-para': paraValue(para) + 'em', '--reader-indent': indent === 'on' ? '2em' : '0' }">
     <div class="reader-bar sticky top-[60px] z-20 mb-6 flex items-center bg-bg py-2">
       <Button variant="ghost" :to="`/story/${id}`" class="-ml-3 px-3" aria-label="สารบัญ"><List class="size-5" /><span class="hidden sm:inline">สารบัญ</span></Button>
       <ChapterSelect :chapters="list" :model-value="no" class="mx-2 max-w-[300px] flex-1" @update:model-value="go" />
@@ -216,7 +254,7 @@ onBeforeUnmount(() => {
       </template>
       <Popover class="relative">
         <PopoverButton as="template"><Button variant="ghost" class="px-3" aria-label="ตัวอักษร"><Type class="size-5" /><span class="hidden sm:inline">ตัวอักษร</span></Button></PopoverButton>
-        <PopoverPanel class="absolute right-0 z-40 mt-1 max-h-[calc(100dvh-8rem)] w-72 overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-lg">
+        <PopoverPanel class="absolute right-0 z-40 mt-1 max-h-[calc(100dvh-13rem)] w-72 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-4 shadow-lg">
           <div class="eyebrow mb-2">ธีม</div>
           <Segmented :model-value="theme" :options="THEMES" label="ธีม" class="mb-4" @update:model-value="setTheme($event as ThemeName)" />
           <div class="eyebrow mb-2">แบบอักษร</div>
@@ -262,9 +300,31 @@ onBeforeUnmount(() => {
     <CommentSection :key="`${id}-${no}`" :story-id="Number(id)" :no="no" collapsible :auto-open="route.query.comments === '1'" />
   </div>
 
-  <button v-if="showTop" type="button" class="fixed bottom-20 right-4 z-40 grid size-11 place-items-center rounded-full border border-line bg-surface shadow-lg md:bottom-6" aria-label="กลับขึ้นบน" @click="backToTop"><ArrowUp class="size-5" /></button>
+  <!-- bottom bar: previous / current chapter / next; slides away with the header while reading down -->
+  <nav v-if="chapter" class="reader-foot fixed inset-x-0 bottom-0 z-30 h-14 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur" aria-label="เปลี่ยนตอน (แถบล่าง)">
+    <div class="mx-auto grid h-14 max-w-xl grid-cols-[1fr_auto_1fr] items-center px-2">
+      <div class="flex items-center justify-start">
+        <Button variant="ghost" class="gap-1 px-2" :aria-pressed="likes.liked" :aria-label="likes.liked ? `เลิกถูกใจตอนนี้ (${likes.count})` : `ถูกใจตอนนี้ (${likes.count})`" @click="like"><Heart class="size-5" :class="likes.liked && 'fill-danger text-danger'" /><span class="min-w-[1ch] text-sm tabular-nums">{{ likes.count }}</span></Button>
+        <Button variant="ghost" size="icon" aria-label="ความคิดเห็น" @click="commentsOpen = true"><MessageSquare class="size-5" /></Button>
+      </div>
+      <div class="flex items-center">
+        <Button variant="ghost" size="icon" :disabled="!prev" aria-label="ตอนก่อนหน้า" @click="go(prev)"><ChevronLeft class="size-6" /></Button>
+        <span class="min-w-16 px-1 text-center text-sm font-medium" aria-live="polite">ตอนที่ {{ no }}</span>
+        <Button variant="ghost" size="icon" :disabled="!next" aria-label="ตอนถัดไป" @click="go(next)"><ChevronRight class="size-6" /></Button>
+      </div>
+      <div class="flex items-center justify-end">
+        <Button variant="ghost" size="icon" :aria-pressed="marked.has(no)" :aria-label="marked.has(no) ? 'เอาบุ๊กมาร์กตอนนี้ออก' : 'บุ๊กมาร์กตอนนี้'" @click="bookmark"><BookmarkCheck v-if="marked.has(no)" class="size-5 text-primary" /><BookmarkPlus v-else class="size-5" /></Button>
+      </div>
+    </div>
+  </nav>
 
-  <div v-if="resumed" role="status" class="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-sm items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm shadow-lg">
+  <button v-if="showTop" type="button" class="fixed bottom-20 right-4 z-10 grid size-11 place-items-center rounded-full border border-line bg-surface shadow-lg" aria-label="กลับขึ้นบน" @click="backToTop"><ArrowUp class="size-5" /></button>
+
+  <Modal :open="commentsOpen" title="ความคิดเห็น" size="lg" @close="commentsOpen = false">
+    <CommentSection :story-id="Number(id)" :no="no" class="!mt-0" />
+  </Modal>
+
+  <div v-if="resumed" role="status" class="fixed inset-x-4 bottom-20 z-10 mx-auto flex max-w-sm items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm shadow-lg">
     <span class="flex-1">อ่านต่อจากที่ค้างไว้</span>
     <Button size="sm" variant="outline" @click="restartFromTop">เริ่มจากต้นตอน</Button>
   </div>
