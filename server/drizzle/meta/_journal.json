@@ -141,6 +141,20 @@
       "when": 1791471623684,
       "tag": "0019_review_votes_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792399659350,
+      "tag": "0020_chapter_likes",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792399848998,
+      "tag": "0021_chapter_bookmarks",
+      "breakpoints": true
     }
   ]
 }

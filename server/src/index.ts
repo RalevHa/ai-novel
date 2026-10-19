@@ -22,7 +22,7 @@ import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './upl
 import { db } from './db'
 import { API_BASE, streamChat, type Usage } from './openrouter'
 import { encryptSecret } from './secrets'
-import { auditLog, bookmarks, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviewReplies, reviews, reviewVotes, readingProgress, stories, userAiKeys, users } from './schema'
+import { auditLog, bookmarks, chapterBookmarks, chapterLikes, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviewReplies, reviews, reviewVotes, readingProgress, stories, userAiKeys, users } from './schema'
 import { releasedAtFor } from './release'
 import { siteRoutes } from './site'
 import { restore, snapshot } from './versions'
@@ -335,8 +335,28 @@ async function addReviewReply(reviewId: number, text: string, me: { id: number }
   return row
 }
 
+/** Like count of a chapter and whether `me` liked it. */
+async function likeState(chapterId: number, me?: { id: number } | null) {
+  const [r] = await db.select({ count: sql<number>`count(*)::int`, liked: sql<boolean>`coalesce(bool_or(${chapterLikes.userId} = ${me?.id ?? 0}), false)` }).from(chapterLikes).where(eq(chapterLikes.chapterId, chapterId))
+  return r
+}
+async function setLike(storyId: number, no: number, on: boolean, me: { id: number }) {
+  const chapterId = await liveChapterId(storyId, no)
+  if (!chapterId) return status(404, { error: 'ไม่พบข้อมูล' })
+  if (limited(`like:${me.id}`, 60, 10 * 60_000)) return status(429, { error: 'กดบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+  if (on) await db.insert(chapterLikes).values({ chapterId, userId: me.id }).onConflictDoNothing()
+  else await db.delete(chapterLikes).where(and(eq(chapterLikes.chapterId, chapterId), eq(chapterLikes.userId, me.id)))
+  return likeState(chapterId, me)
+}
+
 const commentRoutes = new Elysia()
   .use(auth)
+  .get('/stories/:id/chapters/:no/likes', async ({ params, me, status }) => {
+    const chapterId = await liveChapterId(params.id, params.no)
+    return chapterId ? likeState(chapterId, me) : status(404, { error: 'ไม่พบข้อมูล' })
+  }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
+  .put('/stories/:id/chapters/:no/like', ({ params, me }) => setLike(params.id, params.no, true, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), ...userOnly })
+  .delete('/stories/:id/chapters/:no/like', ({ params, me }) => setLike(params.id, params.no, false, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), ...userOnly })
   .get('/stories/:id/chapters/:no/comments', ({ params, query, me }) => listComments(params.id, params.no, query, me), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), query: t.Object({ ...pageQuery.properties, sort: t.Optional(t.Union([t.Literal('new'), t.Literal('top'), t.Literal('replies')])) }) })
   .post('/stories/:id/chapters/:no/comments', ({ params, body, me }) => addComment(params.id, params.no, body.body, body.parentId, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), body: t.Object({ body: t.String({ maxLength: COMMENT_MAX }), parentId: t.Optional(t.Integer()) }), ...userOnly })
   .put('/comments/:id/vote', ({ params, body, me }) => voteComment(params.id, body.value, me!), { ...id, body: t.Object({ value: t.Union([t.Literal(-1), t.Literal(0), t.Literal(1)]) }), ...userOnly })
@@ -570,6 +590,22 @@ const meRoutes = new Elysia({ prefix: '/me' })
       return { ok: true }
     }, id)
     .delete('/bookmarks/:id', async ({ params, me }) => { await db.delete(bookmarks).where(and(eq(bookmarks.userId, me!.id), eq(bookmarks.storyId, params.id))); return { ok: true } }, id)
+    // chapter bookmarks: the list for the bookmarks page, the chapter numbers marked in one story (for the reader's button), and mark / unmark
+    .get('/chapter-bookmarks', ({ me }) => db.select({ storyId: stories.id, storyTitle: stories.title, genre: stories.genre, coverImage: stories.coverImage, no: chapters.no, title: chapters.title, createdAt: chapterBookmarks.createdAt })
+      .from(chapterBookmarks).innerJoin(chapters, eq(chapters.id, chapterBookmarks.chapterId)).innerJoin(stories, eq(stories.id, chapters.storyId))
+      .where(and(eq(chapterBookmarks.userId, me!.id), visible, eq(stories.published, true))).orderBy(desc(chapterBookmarks.createdAt)))
+    .get('/chapter-bookmarks/:id', async ({ params, me }) => (await db.select({ no: chapters.no }).from(chapterBookmarks).innerJoin(chapters, eq(chapters.id, chapterBookmarks.chapterId))
+      .where(and(eq(chapterBookmarks.userId, me!.id), eq(chapters.storyId, params.id))).orderBy(asc(chapters.no))).map(r => r.no), id)
+    .put('/chapter-bookmarks/:id/:no', async ({ params, me, status }) => {
+      const chapterId = await liveChapterId(params.id, params.no)
+      if (!chapterId) return status(404, { error: 'ไม่พบข้อมูล' })
+      await db.insert(chapterBookmarks).values({ chapterId, userId: me!.id }).onConflictDoNothing()
+      return { ok: true }
+    }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
+    .delete('/chapter-bookmarks/:id/:no', async ({ params, me }) => {
+      await db.delete(chapterBookmarks).where(and(eq(chapterBookmarks.userId, me!.id), sql`${chapterBookmarks.chapterId} in (select id from chapters where story_id = ${params.id} and no = ${params.no})`))
+      return { ok: true }
+    }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
     .get('/reads/:id', async ({ params, me }) => (await db.select({ no: chapterReads.no }).from(chapterReads)
       .where(and(eq(chapterReads.userId, me!.id), eq(chapterReads.storyId, params.id))).orderBy(asc(chapterReads.no))).map(r => r.no), id)
     .post('/reads/:id', async ({ params, body, me, status }) => {
