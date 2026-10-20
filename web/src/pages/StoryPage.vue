@@ -15,6 +15,7 @@ import { fmtDate } from '../genre'
 import { lsGet } from '../ls'
 import { reads as loadReads } from '../readState'
 import { setTitle } from '../title'
+import { ask } from '../confirm'
 import { toast } from '../toast'
 import { useAuth } from '../stores/auth'
 import { useBookmarks } from '../stores/bookmarks'
@@ -62,6 +63,7 @@ onBeforeUnmount(() => io?.disconnect())
 
 async function follow() {
   if (!auth.user) { toast('เข้าสู่ระบบก่อนจึงจะติดตามเรื่องได้'); router.push({ path: '/login', query: { next: `/story/${id}` } }); return }
+  if (marks.has(Number(id)) && !await ask({ title: 'เลิกติดตามเรื่องนี้?', body: 'เรื่องจะหายไปจากชั้นหนังสือของคุณ ติดตามใหม่ได้ทุกเมื่อ', confirmLabel: 'เลิกติดตาม' })) return
   try { await marks.toggle(Number(id)); toast(marks.has(Number(id)) ? 'เพิ่มในชั้นหนังสือของฉันแล้ว' : 'เลิกติดตามแล้ว') } catch (e) { toast((e as Error).message, 'error') }
 }
 

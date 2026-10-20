@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { client, ok } from '../api'
+import { ask } from '../confirm'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
@@ -32,13 +33,14 @@ const shown = computed(() => {
   return rows.value.filter(keep).sort(order[sort.value])
 })
 
-// select mode: tick several stories and stop following them at once (two taps, so a slip does not undo the shelf)
-const selecting = ref(false), picked = ref(new Set<number>()), confirm = ref(false), busy = ref(false)
-const toggleMode = () => { selecting.value = !selecting.value; picked.value = new Set(); confirm.value = false }
-const tick = (id: number) => { const s = new Set(picked.value); s.has(id) ? s.delete(id) : s.add(id); picked.value = s; confirm.value = false }
-const tickAll = () => { picked.value = picked.value.size === shown.value.length ? new Set() : new Set(shown.value.map(r => r.id)); confirm.value = false }
+// select mode: tick several stories and stop following them at once (a dialog asks first, so a slip does not undo the shelf)
+const selecting = ref(false), picked = ref(new Set<number>()), busy = ref(false)
+const toggleMode = () => { selecting.value = !selecting.value; picked.value = new Set() }
+const tick = (id: number) => { const s = new Set(picked.value); s.has(id) ? s.delete(id) : s.add(id); picked.value = s }
+const tickAll = () => { picked.value = picked.value.size === shown.value.length ? new Set() : new Set(shown.value.map(r => r.id)) }
 
 async function unfollow(ids: number[]) {
+  if (!await ask({ title: ids.length === 1 ? 'เลิกติดตามเรื่องนี้?' : `เลิกติดตาม ${ids.length} เรื่อง?`, body: 'เรื่องจะหายไปจากรายการนี้ ติดตามใหม่ได้ทุกเมื่อ', confirmLabel: 'เลิกติดตาม' })) return
   busy.value = true
   let failed = 0
   for (const id of ids) {
@@ -46,7 +48,7 @@ async function unfollow(ids: number[]) {
   }
   busy.value = false
   if (ids.length > failed) toast(ids.length - failed === 1 ? 'เลิกติดตามแล้ว' : `เลิกติดตาม ${ids.length - failed} เรื่องแล้ว`)
-  picked.value = new Set(); confirm.value = false
+  picked.value = new Set()
   if (!rows.value.length) selecting.value = false
 }
 
@@ -89,11 +91,7 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       <Button variant="ghost" size="sm" @click="tickAll">{{ picked.size === shown.length ? 'ไม่เลือกเลย' : 'เลือกทั้งหมด' }}</Button>
       <span class="muted flex-1 text-sm">เลือกแล้ว {{ picked.size }} เรื่อง</span>
       <template v-if="picked.size">
-        <Button v-if="!confirm" variant="outline" size="sm" @click="confirm = true">เลิกติดตามที่เลือก</Button>
-        <template v-else>
-          <Button variant="danger" size="sm" :loading="busy" @click="unfollow([...picked])">ยืนยันเลิกติดตาม {{ picked.size }} เรื่อง</Button>
-          <Button variant="ghost" size="sm" @click="confirm = false">ยกเลิก</Button>
-        </template>
+        <Button variant="outline" size="sm" :loading="busy" @click="unfollow([...picked])">เลิกติดตามที่เลือก</Button>
       </template>
     </div>
 

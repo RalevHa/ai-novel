@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, BookmarkCheck, Bookmark, ExternalLink, Flag, Globe, History, LibraryBig, LogOut, Moon, Search, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
+import ConfirmHost from './components/ui/ConfirmHost.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
 import Toaster from './components/ui/Toaster.vue'
 import { client, ok } from './api'
@@ -112,5 +113,6 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
     </footer>
   </template>
 
+  <ConfirmHost />
   <Toaster />
 </template>

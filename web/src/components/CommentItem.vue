@@ -9,8 +9,8 @@ import Textarea from './ui/Textarea.vue'
 export type CommentView = { id: number; body: string; createdAt: string | Date; editedAt: string | Date | null; userId: number; userName: string; isAuthor: boolean; canDelete: boolean; score: number; myVote: number | null }
 
 // `save` resolves true when the new text was stored (the parent reloads the list); the form closes only then
-const props = defineProps<{ c: CommentView; confirming: boolean; save: (text: string) => Promise<boolean> }>()
-defineEmits<{ vote: [value: -1 | 0 | 1]; reply: []; askDelete: []; cancelDelete: []; remove: []; report: [] }>()
+const props = defineProps<{ c: CommentView; save: (text: string) => Promise<boolean> }>()
+defineEmits<{ vote: [value: -1 | 0 | 1]; reply: []; remove: []; report: [] }>()
 const auth = useAuth()
 const editing = ref(false), draft = ref(''), saving = ref(false)
 const startEdit = () => { draft.value = props.c.body; editing.value = true }
@@ -47,13 +47,7 @@ const btn = (on: boolean) => ['grid size-11 place-items-center rounded-lg hover:
         <Button variant="ghost" size="sm" @click="$emit('reply')">ตอบกลับ</Button>
         <Button v-if="c.userId === auth.user?.id && !editing" variant="ghost" size="sm" @click="startEdit">แก้ไข</Button>
         <Button v-else-if="auth.user && c.userId !== auth.user.id" variant="ghost" size="sm" @click="$emit('report')">รายงาน</Button>
-        <template v-if="c.canDelete">
-          <Button v-if="!confirming" variant="ghost" size="sm" @click="$emit('askDelete')">ลบ</Button>
-          <template v-else>
-            <Button variant="danger" size="sm" @click="$emit('remove')">ยืนยันลบ</Button>
-            <Button variant="ghost" size="sm" @click="$emit('cancelDelete')">ยกเลิก</Button>
-          </template>
-        </template>
+        <Button v-if="c.canDelete" variant="ghost" size="sm" @click="$emit('remove')">ลบ</Button>
       </div>
     </div>
   </div>
