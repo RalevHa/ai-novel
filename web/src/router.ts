@@ -46,7 +46,7 @@ const router = createRouter({
 router.beforeEach(async (to, from) => {
   const auth = useAuth()
   if (!auth.ready) await auth.load()
-  if ((to.meta.user && !auth.user) || (to.meta.staff && !auth.canWrite) || (to.meta.admin && !auth.isAdmin)) return { path: '/login', query: { next: to.fullPath } }
+  if ((to.meta.user && !auth.user) || (to.meta.staff && !auth.canWrite) || (to.meta.admin && !auth.isAdmin)) return auth.previewing ? '/story' : { path: '/login', query: { next: to.fullPath } }
   // someone who is signed in and just opened the site goes straight to the novels; clicking the logo later still shows the landing page
   if (auth.user && to.path === '/' && from === START_LOCATION) return '/story'
   if (auth.user && (to.path === '/login' || to.path === '/register')) return '/story'

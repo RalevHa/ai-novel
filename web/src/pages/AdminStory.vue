@@ -24,6 +24,7 @@ import { fmtCost, fmtDateTime, fromLocalInput, parseDb, toLocalInput } from '../
 import { MODELS } from '../models'
 import { setTitle } from '../title'
 import { ask } from '../confirm'
+import { guardedFetch } from '../viewAs'
 import { toast, toastError } from '../toast'
 
 const id = useRoute().params.id as string
@@ -104,7 +105,7 @@ async function rewrite() {
   rw.value.busy = true; rw.value.out = ''
   rwCtrl = new AbortController()
   try {
-    const r = await fetch(`/api/admin/chapters/${edit.value.id}/rewrite`, {
+    const r = await guardedFetch(`/api/admin/chapters/${edit.value.id}/rewrite`, {
       method: 'POST', credentials: 'include', signal: rwCtrl.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: rw.value.model, instruction: rw.value.note }),
@@ -213,7 +214,7 @@ async function summarizeMissing() {
 // streams one chapter into `out`; resolves with its text (the server appends a "⚠️ ..." note when the model looped or failed)
 async function generateOne() {
   out.value = ''
-  const r = await fetch(`/api/admin/stories/${id}/generate`, {
+  const r = await guardedFetch(`/api/admin/stories/${id}/generate`, {
     method: 'POST', credentials: 'include', signal: ctrl!.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instruction: instruction.value, fromOutline: fromOutline.value }),

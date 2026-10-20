@@ -1,7 +1,8 @@
 import { treaty } from '@elysiajs/eden'
 import type { App } from '../../server/src/index'
+import { guardedFetch } from './viewAs'
 
-export const client = treaty<App>(location.origin, { fetch: { credentials: 'include' } })
+export const client = treaty<App>(location.origin, { fetcher: guardedFetch as typeof fetch, fetch: { credentials: 'include' } })
 
 /** Unwrap an Eden response: return data, or throw an Error carrying the server's message. */
 export async function ok<T>(p: Promise<{ data: T; error: { status: unknown; value: unknown } | null }>): Promise<NonNullable<T>> {
