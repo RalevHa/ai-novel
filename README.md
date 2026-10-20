@@ -46,6 +46,8 @@ web/      Vue 3 + Vite + Tailwind CSS           พอร์ต 5173 (proxy /api
 
 แต่ละหน้าทำอะไรและ flow ของฟังก์ชันหลัก: [docs/PAGES.md](docs/PAGES.md)
 
+ฝั่งเซิร์ฟเวอร์ทั้งระบบ (การตั้งค่า สิทธิ์ ข้อมูล API ทุก route flow สำคัญ): [docs/SERVER.md](docs/SERVER.md)
+
 ## ตัวแปรใน `server/.env`
 
 | ตัวแปร | ความหมาย |
