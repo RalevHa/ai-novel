@@ -47,7 +47,7 @@ const btn = (on: boolean) => ['grid size-11 place-items-center rounded-lg hover:
         <Button variant="ghost" size="sm" @click="$emit('reply')">ตอบกลับ</Button>
         <Button v-if="c.userId === auth.user?.id && !editing" variant="ghost" size="sm" @click="startEdit">แก้ไข</Button>
         <Button v-else-if="auth.user && c.userId !== auth.user.id" variant="ghost" size="sm" @click="$emit('report')">รายงาน</Button>
-        <Button v-if="c.canDelete" variant="ghost" size="sm" @click="$emit('remove')">ลบ</Button>
+        <Button v-if="auth.canRemove(c.canDelete, c.userId)" variant="ghost" size="sm" @click="$emit('remove')">ลบ</Button>
       </div>
     </div>
   </div>

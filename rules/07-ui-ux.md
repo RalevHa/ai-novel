@@ -85,6 +85,7 @@ Known drift (fix when you touch the file, do not copy it): a few admin titles us
 - Toggles that the server can refuse update the UI first and roll back on error (see `stores/bookmarks.ts`).
 - Show a loading state (`Bar`, or `loading` on the button) for anything over a moment, an empty state with a next action (`ยังไม่ได้ติดตามเรื่องไหน` + button), and disable a submit button while it runs so it cannot be double-sent.
 - Forms: validate what the browser can (`required`, `type`), show the character counter next to limited text (`ReviewSection`), and keep the user's text on error.
+- Admin "view as writer/reader" (`viewAs.ts`) is read-only: decide what a page shows from `auth.isAdmin` / `auth.canWrite` (the effective role), never from `auth.user.role`, and every request must go through `client` or `guardedFetch`, never a bare `fetch`.
 - A page works at 360px width first; check the mobile bottom bars and `z-index` before adding a fixed element (toasts are `z-[60]`, modals `z-50`).
 
 ## Accessibility

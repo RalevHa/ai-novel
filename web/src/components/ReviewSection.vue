@@ -120,7 +120,7 @@ async function remove(id: number) {
           <span class="flex text-primary" role="img" :aria-label="`${r.rating} ดาว`"><Star v-for="n in 5" :key="n" :class="['size-3.5', n <= r.rating && 'fill-current']" aria-hidden="true" /></span>
           <span class="muted text-xs">{{ fmtDateTime(r.updatedAt) }}<template v-if="edited(r)"> (แก้ไขแล้ว)</template></span>
           <span class="flex-1" />
-          <Button v-if="r.canDelete" variant="ghost" size="sm" @click="remove(r.id)">ลบ</Button>
+          <Button v-if="auth.canRemove(r.canDelete, r.userId)" variant="ghost" size="sm" @click="remove(r.id)">ลบ</Button>
         </div>
         <p v-if="r.body" class="mt-1 whitespace-pre-wrap break-words leading-relaxed">{{ r.body }}</p>
         <div class="mt-1 flex flex-wrap items-center gap-1">
@@ -136,7 +136,7 @@ async function remove(id: number) {
               <span v-if="p.isAuthor" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">ผู้แต่ง</span>
               <span class="muted text-xs">{{ fmtDateTime(p.createdAt) }}</span>
               <span class="flex-1" />
-              <Button v-if="p.canDelete" variant="ghost" size="sm" @click="removeReply(p.id)">ลบ</Button>
+              <Button v-if="auth.canRemove(p.canDelete, p.userId)" variant="ghost" size="sm" @click="removeReply(p.id)">ลบ</Button>
             </div>
             <p class="mt-0.5 whitespace-pre-wrap break-words leading-relaxed">{{ p.body }}</p>
           </li>

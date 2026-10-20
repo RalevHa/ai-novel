@@ -2,6 +2,7 @@ import { client, ok } from './api'
 import { lsGet, lsSet } from './ls'
 import { touch } from './readPos'
 import { useAuth } from './stores/auth'
+import { guardedFetch, viewAs } from './viewAs'
 
 // Where a reader stopped (scroll position in a chapter) and which chapters they finished.
 // Signed in: kept on the account so it follows them between devices. Always mirrored in localStorage, which is all an anonymous reader has.
@@ -23,7 +24,7 @@ async function loadServer() {
 }
 
 const send = (path: string, method: string, body: unknown) =>
-  fetch(`/api/me/${path}`, { method, credentials: 'include', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {})
+  guardedFetch(`/api/me/${path}`, { method, credentials: 'include', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {})
 
 let pending: { storyId: number; no: number; pos: number } | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -67,10 +68,11 @@ export async function reads(storyId: number) {
 // Anonymous reader statistics: "opened" and "read to the end", at most once per chapter per day per browser. No account, no id is sent.
 const today = () => new Date().toISOString().slice(0, 10)
 function count(kind: 'viewed' | 'finished', storyId: number, no: number) {
+  if (viewAs.value) return // a preview is not a reader: leave no view behind, and do not use up today's count
   const key = `${kind}:${storyId}:${no}`
   if (lsGet(key) === today()) return
   lsSet(key, today())
-  fetch(`/api/stories/${storyId}/chapters/${no}/view`, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(kind === 'finished' ? { done: true } : {}) }).catch(() => {})
+  guardedFetch(`/api/stories/${storyId}/chapters/${no}/view`, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(kind === 'finished' ? { done: true } : {}) }).catch(() => {})
 }
 export const countView = (storyId: number, no: number) => count('viewed', storyId, no)
 export const countFinish = (storyId: number, no: number) => count('finished', storyId, no)

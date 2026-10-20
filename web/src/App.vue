@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, BookmarkCheck, Bookmark, ExternalLink, Flag, Globe, History, LibraryBig, LogOut, Moon, Search, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
+import { Bell, BookmarkCheck, Bookmark, ExternalLink, Flag, Globe, History, LibraryBig, BookOpen, Eye, LogOut, Moon, PenLine, Search, Settings, Sun, UserRound, Users } from 'lucide-vue-next'
 import Button from './components/ui/Button.vue'
 import ConfirmHost from './components/ui/ConfirmHost.vue'
 import DropMenu, { type MenuEntry } from './components/ui/DropMenu.vue'
@@ -10,6 +10,7 @@ import { client, ok } from './api'
 import { useAuth } from './stores/auth'
 import { useNotifications } from './stores/notifications'
 import { isDark, toggleTheme } from './theme'
+import { setViewAs, viewAs, type ViewAs } from './viewAs'
 
 const auth = useAuth(), route = useRoute(), router = useRouter(), bell = useNotifications()
 const inAdmin = computed(() => route.path.startsWith('/admin'))
@@ -30,6 +31,12 @@ async function logout() {
   await auth.logout()
   router.push('/')
 }
+// admins only: look at the site as a writer or a reader (read-only, see viewAs.ts); null leaves the preview
+function switchView(v: ViewAs | null) {
+  setViewAs(v)
+  if (v) router.push(v === 'user' ? '/story' : '/admin/stories')
+}
+const VIEWS = { writer: { label: 'นักเขียน', icon: PenLine }, user: { label: 'ผู้อ่าน', icon: BookOpen } } as const
 // what to call the management area for this person (the same /admin shell serves both roles)
 const areaName = computed(() => (auth.isAdmin ? 'ผู้ดูแลระบบ' : 'นักเขียน'))
 // grouped: management (admins/writers only) apart from what every reader has
@@ -39,7 +46,11 @@ const menu = computed<MenuEntry[]>(() => [
   { label: 'ตอนที่บุ๊กมาร์ก', icon: Bookmark, to: '/bookmarks' },
   { label: 'ประวัติการอ่าน', icon: History, to: '/history' },
   { label: 'โปรไฟล์ของฉัน', icon: UserRound, to: '/profile' },
-  { label: 'ออกจากระบบ', icon: LogOut, action: logout, section: auth.canWrite ? 'บัญชี' : undefined },
+  ...(auth.realAdmin ? [
+    ...(Object.keys(VIEWS) as ViewAs[]).filter(k => k !== viewAs.value).map((k, i) => ({ label: `ดูเป็น${VIEWS[k].label}`, icon: VIEWS[k].icon, action: () => switchView(k), section: i ? undefined : 'มุมมองจำลอง' })),
+    ...(auth.previewing ? [{ label: 'ออกจากมุมมองจำลอง', icon: Eye, action: () => switchView(null) }] : []),
+  ] : []),
+  { label: 'ออกจากระบบ', icon: LogOut, action: logout, section: auth.canWrite || auth.realAdmin ? 'บัญชี' : undefined },
 ])
 const nav = computed(() => [
   { to: '/admin/stories', label: 'นิยาย', icon: LibraryBig },
@@ -113,6 +124,10 @@ const skipToMain = () => { const m = document.getElementById('main'); m?.focus()
     </footer>
   </template>
 
+  <div v-if="auth.previewing" class="fixed bottom-20 left-3 z-[55] flex items-center gap-2 rounded-full bg-fg py-1 pl-4 pr-1 text-sm text-bg shadow-lg md:bottom-4" role="status">
+    <Eye class="size-4" aria-hidden="true" />มุมมอง{{ viewAs === 'writer' ? 'นักเขียน' : 'ผู้อ่าน' }} · อ่านอย่างเดียว
+    <button type="button" class="min-h-11 rounded-full bg-bg px-4 font-medium text-fg hover:bg-bg/90 sm:min-h-8" @click="switchView(null)">ออก</button>
+  </div>
   <ConfirmHost />
   <Toaster />
 </template>
