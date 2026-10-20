@@ -37,7 +37,7 @@
 
 ## Knowledge structure
 
-- `rules/` — cross-cutting rules in 6 categories (general, code-quality, error-handling, security, performance, database)
+- `rules/` — cross-cutting rules in 7 categories (general, code-quality, error-handling, security, performance, database, ui-ux)
 - `skills/` — reusable how-tos and gotchas discovered while working
 - `agents/` — the specialist roles and when to use each
 - `hooks/` — checklists to run BeforeTask / BeforeCommit / AfterTask / BeforeRelease / AfterRelease
