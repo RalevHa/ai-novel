@@ -48,6 +48,8 @@ web/      Vue 3 + Vite + Tailwind CSS           พอร์ต 5173 (proxy /api
 
 ฝั่งเซิร์ฟเวอร์ทั้งระบบ (การตั้งค่า สิทธิ์ ข้อมูล API ทุก route flow สำคัญ): [docs/SERVER.md](docs/SERVER.md)
 
+นำขึ้นใช้งานจริงบนเครื่องที่บ้านด้วย Cloudflare Tunnel: [docs/DEPLOY.md](docs/DEPLOY.md)
+
 ## ตัวแปรใน `server/.env`
 
 | ตัวแปร | ความหมาย |

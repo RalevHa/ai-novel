@@ -33,6 +33,7 @@
 | `UPLOAD_DIR` | โฟลเดอร์รูป (ค่าเริ่มต้น `server/uploads`) |
 | `PUBLIC_URL` | origin จริงของเว็บ ใช้สร้างลิงก์ใน RSS และการ์ดแชร์เมื่ออยู่หลัง proxy |
 | `CORS_ORIGIN` | origin ที่อนุญาตใน production |
+| `TRUST_CLOUDFLARE` | `true` = ใช้ IP จาก header `CF-Connecting-IP` สำหรับ rate limit ตั้งเฉพาะเมื่อเซิร์ฟเวอร์เข้าถึงได้ผ่าน Cloudflare Tunnel เท่านั้น (header ปลอมได้ถ้ามีทางเข้าอื่น) ดู [DEPLOY.md](DEPLOY.md) |
 | `ALLOW_REGISTRATION` | `false` = ปิดรับสมัคร |
 | `OPERATOR_NAME` / `CONTACT_EMAIL` | ค่าตั้งต้นของ `{{operator}}` / `{{contactEmail}}` ในหน้าข้อมูล จนกว่าแอดมินตั้งในหน้าเว็บ |
 | `PORT` | พอร์ต (3000) |
@@ -204,7 +205,7 @@
 - **Atom** (`feed.ts`), **Open Graph** (`og.ts`): escape ด้วย `xml.ts: esc`
 
 ## 7. Rate limit (`ratelimit.ts`)
-นับในหน่วยความจำของโพรเซสเดียว (`ponytail:` ถ้ารันหลายอินสแตนซ์ต้องย้ายไปที่เก็บร่วม เช่น Redis) ล้างรายการหมดอายุเมื่อมี >10,000 คีย์
+IP ผู้เรียกมาจาก `clientip.ts` (socket ปกติ หรือ `CF-Connecting-IP` เมื่อ `TRUST_CLOUDFLARE=true`) นับในหน่วยความจำของโพรเซสเดียว (`ponytail:` ถ้ารันหลายอินสแตนซ์ต้องย้ายไปที่เก็บร่วม เช่น Redis) ล้างรายการหมดอายุเมื่อมี >10,000 คีย์
 
 | ขอบเขต | จำกัด |
 |---|---|

@@ -4,6 +4,7 @@ import { alias } from 'drizzle-orm/pg-core'
 import { join } from 'node:path'
 import { Elysia, status, t } from 'elysia'
 import { aiGate, ownKey } from './ai'
+import { clientIp } from './clientip'
 import { adminOnly, assertConfig, auth, prod, seedAdmin, staffOnly, userOnly } from './auth'
 import { addChapter, checkChapter, summarizeChapter } from './chapters'
 import { suggestCharacters } from './characters'
@@ -63,7 +64,7 @@ const authRoutes = new Elysia({ prefix: '/auth' })
   .use(auth)
   .post('/register', async ({ body, status, request, server }) => {
     if (process.env.ALLOW_REGISTRATION === 'false') return status(403, { error: 'ปิดรับสมัครสมาชิก' })
-    if (limited(`register:${server?.requestIP(request)?.address}`, 5, 60 * 60_000)) return status(429, { error: 'สมัครบ่อยเกินไป ลองใหม่ภายหลัง' })
+    if (limited(`register:${clientIp(request, server)}`, 5, 60 * 60_000)) return status(429, { error: 'สมัครบ่อยเกินไป ลองใหม่ภายหลัง' })
     const existing = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, emailVerifiedAt: true } })
     if (existing?.emailVerifiedAt) return status(409, { error: 'อีเมลนี้ถูกใช้แล้ว' })
     const row = { name: body.name, passwordHash: await Bun.password.hash(body.password), termsAcceptedAt: sql`now()` }
@@ -76,7 +77,7 @@ const authRoutes = new Elysia({ prefix: '/auth' })
   }, { body: t.Object({ email: t.String({ format: 'email' }), name: t.String({ minLength: 1 }), password: t.String({ minLength: 8 }), acceptTerms: t.Literal(true, { error: 'ต้องยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัวก่อนสมัคร' }) }) })
   .post('/login', async ({ body, jwt, cookie: { token }, status, request, server }) => {
     // per IP + email: guessing one account from one address is capped, without letting a stranger lock the admin out from elsewhere
-    const key = `login:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`
+    const key = `login:${clientIp(request, server)}:${body.email.toLowerCase()}`
     if (limited(key, 10, WINDOW)) return status(429, { error: 'ลองเข้าสู่ระบบบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email) })
     if (!u || !(await Bun.password.verify(body.password, u.passwordHash))) return status(401, { error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
@@ -90,7 +91,7 @@ const authRoutes = new Elysia({ prefix: '/auth' })
     return { id: u.id, email: u.email, name: u.name, role: u.role }
   }, { body: t.Object({ email: t.String(), password: t.String() }) })
   .post('/verify', async ({ body, jwt, cookie: { token }, status, request, server }) => {
-    if (limited(`verify:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+    if (limited(`verify:${clientIp(request, server)}:${body.email.toLowerCase()}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, email: true, emailVerifiedAt: true } })
     if (!u || u.emailVerifiedAt || !(await checkCode(u.id, 'verify', u.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
     const [me] = await db.update(users).set({ emailVerifiedAt: sql`now()` }).where(eq(users.id, u.id)).returning(publicUser)
@@ -99,19 +100,19 @@ const authRoutes = new Elysia({ prefix: '/auth' })
   }, { body: t.Object({ email: t.String(), code: t.String({ minLength: 6, maxLength: 6 }) }) })
   // "send again" and "forgot password" always answer ok, so they cannot be used to find out which addresses have an account
   .post('/resend', async ({ body, status, request, server }) => {
-    if (limited(`resend:${server?.requestIP(request)?.address}`, 10, 60 * 60_000)) return status(429, { error: 'ขอรหัสบ่อยเกินไป ลองใหม่ภายหลัง' })
+    if (limited(`resend:${clientIp(request, server)}`, 10, 60 * 60_000)) return status(429, { error: 'ขอรหัสบ่อยเกินไป ลองใหม่ภายหลัง' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, name: true, email: true, emailVerifiedAt: true } })
     if (u && !u.emailVerifiedAt) await sendCode(u, 'verify', u.email).catch(e => console.error('verify mail failed', e))
     return { ok: true }
   }, { body: t.Object({ email: t.String() }) })
   .post('/forgot', async ({ body, status, request, server }) => {
-    if (limited(`forgot:${server?.requestIP(request)?.address}`, 10, 60 * 60_000)) return status(429, { error: 'ขอรหัสบ่อยเกินไป ลองใหม่ภายหลัง' })
+    if (limited(`forgot:${clientIp(request, server)}`, 10, 60 * 60_000)) return status(429, { error: 'ขอรหัสบ่อยเกินไป ลองใหม่ภายหลัง' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, name: true, email: true } })
     if (u) await sendCode(u, 'reset', u.email).catch(e => console.error('reset mail failed', e))
     return { ok: true }
   }, { body: t.Object({ email: t.String() }) })
   .post('/reset', async ({ body, status, request, server }) => {
-    if (limited(`reset:${server?.requestIP(request)?.address}:${body.email.toLowerCase()}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
+    if (limited(`reset:${clientIp(request, server)}:${body.email.toLowerCase()}`, 10, WINDOW)) return status(429, { error: 'ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่' })
     const u = await db.query.users.findFirst({ where: eq(users.email, body.email), columns: { id: true, email: true } })
     if (!u || !(await checkCode(u.id, 'reset', u.email, body.code))) return status(400, { error: 'รหัสไม่ถูกต้องหรือหมดอายุ' })
     // the code came to their inbox, so this also proves the address; sign-in itself stays a separate step
@@ -167,7 +168,7 @@ const readerRoutes = new Elysia()
   }, id)
   // built per request from published chapters only; cache by (story, newest chapter) if downloads ever get frequent
   .get('/stories/:id/epub', async ({ params, status, request, server }) => {
-    if (limited(`epub:${server?.requestIP(request)?.address}`, 20, 60 * 60_000)) return status(429, { error: 'ดาวน์โหลดบ่อยเกินไป ลองใหม่ภายหลัง' })
+    if (limited(`epub:${clientIp(request, server)}`, 20, 60 * 60_000)) return status(429, { error: 'ดาวน์โหลดบ่อยเกินไป ลองใหม่ภายหลัง' })
     const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, coverImage: true } })
     if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
     const list = await db.select({ no: chapters.no, title: chapters.title, content: chapters.content }).from(chapters)
@@ -193,7 +194,7 @@ const readerRoutes = new Elysia()
   .get('/og/story/:id/read/:no', ({ params, request }) => ogCard(params.id, params.no, request), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
   // Anonymous aggregate counters: how many times a chapter was opened / read to the end. Nothing about who is stored (the IP is only used for the in-memory rate limit).
   .post('/stories/:id/chapters/:no/view', async ({ params, body, status, request, server }) => {
-    if (limited(`view:${server?.requestIP(request)?.address}`, 300, 60 * 60_000)) return status(429, { error: 'ส่งบ่อยเกินไป' })
+    if (limited(`view:${clientIp(request, server)}`, 300, 60 * 60_000)) return status(429, { error: 'ส่งบ่อยเกินไป' })
     const rows = await db.update(chapters).set(body.done ? { finishes: sql`${chapters.finishes} + 1` } : { views: sql`${chapters.views} + 1` })
       .where(and(eq(chapters.storyId, params.id), eq(chapters.no, params.no), visible, sql`exists (select 1 from stories where stories.id = ${chapters.storyId} and stories.published)`)).returning({ id: chapters.id })
     return rows.length ? { ok: true } : status(404, { error: 'ไม่พบข้อมูล' })

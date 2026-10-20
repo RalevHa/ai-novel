@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: novel
       POSTGRES_PASSWORD: novel
       POSTGRES_DB: novel
-    ports: ["5433:5432"]
+    ports: ["127.0.0.1:5433:5432"] # this machine only: the database is never reachable from the network
     volumes: [pgdata:/var/lib/postgresql/data]
 volumes:
   pgdata:
