@@ -4,21 +4,24 @@ import { client, ok } from '../api'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import { fmtDateTime } from '../genre'
+import { ask } from '../confirm'
 import { toast, toastError } from '../toast'
 
 const load = () => ok(client.api.admin.reports.get())
 type Row = Awaited<ReturnType<typeof load>>[number]
-const rows = ref<Row[]>([]), loading = ref(true), confirmId = ref<number | null>(null), busy = ref(false)
+const rows = ref<Row[]>([]), loading = ref(true), busy = ref(false)
 
 const refresh = async () => { try { rows.value = await load() } catch (e) { toastError(e) } loading.value = false }
 onMounted(refresh)
 
 async function act(fn: () => Promise<unknown>, done: string) {
   busy.value = true
-  try { await fn(); confirmId.value = null; toast(done); await refresh() } catch (e) { toastError(e) } finally { busy.value = false }
+  try { await fn(); toast(done); await refresh() } catch (e) { toastError(e) } finally { busy.value = false }
 }
 const dismiss = (r: Row) => act(() => ok(client.api.admin.reports({ id: r.commentId }).dismiss.post()), 'ปิดรายงานแล้ว')
-const remove = (r: Row) => act(() => ok(client.api.comments({ id: r.commentId }).delete()), 'ลบความคิดเห็นแล้ว')
+const remove = async (r: Row) => {
+  if (await ask({ title: 'ลบความคิดเห็นนี้?', body: 'ลบแล้วกู้คืนไม่ได้ แต่จะถูกบันทึกในประวัติที่หน้า "ผู้ใช้"', confirmLabel: 'ลบความคิดเห็น' })) await act(() => ok(client.api.comments({ id: r.commentId }).delete()), 'ลบความคิดเห็นแล้ว')
+}
 </script>
 
 <template>
@@ -44,11 +47,7 @@ const remove = (r: Row) => act(() => ok(client.api.comments({ id: r.commentId })
       </div>
       <div class="mt-3 flex flex-wrap justify-end gap-2">
         <Button variant="ghost" :disabled="busy" @click="dismiss(r)">ไม่มีปัญหา</Button>
-        <Button v-if="confirmId !== r.commentId" variant="outline" :disabled="busy" @click="confirmId = r.commentId">ลบความคิดเห็น</Button>
-        <template v-else>
-          <Button variant="danger" :loading="busy" @click="remove(r)">ยืนยันลบ</Button>
-          <Button variant="ghost" @click="confirmId = null">ยกเลิก</Button>
-        </template>
+        <Button variant="outline" :disabled="busy" @click="remove(r)">ลบความคิดเห็น</Button>
       </div>
     </li>
   </ul>

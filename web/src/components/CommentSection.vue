@@ -4,6 +4,7 @@ import { ChevronDown, MessageSquare } from 'lucide-vue-next'
 import { useRoute } from 'vue-router'
 import { client, ok } from '../api'
 import { useAuth } from '../stores/auth'
+import { ask } from '../confirm'
 import { toast, toastError } from '../toast'
 import CommentItem, { type CommentView } from './CommentItem.vue'
 import Button from './ui/Button.vue'
@@ -23,7 +24,7 @@ const SORTS = [{ k: 'new', n: 'ใหม่ล่าสุด' }, { k: 'top', n:
 const sort = ref<Sort>('new')
 const fetchPage = (page: number) => ok(chapter().comments.get({ query: { page, sort: sort.value } }))
 const data = ref<Awaited<ReturnType<typeof fetchPage>> | null>(null)
-const page = ref(1), text = ref(''), busy = ref(false), open = ref(!props.collapsible || !!props.autoOpen), confirmId = ref<number | null>(null)
+const page = ref(1), text = ref(''), busy = ref(false), open = ref(!props.collapsible || !!props.autoOpen)
 // the reply box open under one thread; answering a reply is also posted to that thread, with the person's name in front
 const replyTo = ref<{ thread: number; parentId: number } | null>(null), replyText = ref('')
 const remaining = computed(() => MAX - text.value.length)
@@ -94,7 +95,8 @@ onMounted(async () => {
 })
 
 async function remove(id: number) {
-  try { await ok(client.api.comments({ id }).delete()); confirmId.value = null; await load() } catch (e) { toastError(e) }
+  if (!await ask({ title: 'ลบความคิดเห็นนี้?', body: 'ลบแล้วกู้คืนไม่ได้', confirmLabel: 'ลบ' })) return
+  try { await ok(client.api.comments({ id }).delete()); await load() } catch (e) { toastError(e) }
 }
 </script>
 
@@ -124,10 +126,10 @@ async function remove(id: number) {
       <p v-if="data && !data.items.length" class="muted mt-6 text-sm">ยังไม่มีความคิดเห็น</p>
       <ul v-else-if="data" class="mt-4 divide-y divide-line">
         <li v-for="c in data.items" :key="c.id" class="py-3">
-          <CommentItem :c="c" :confirming="confirmId === c.id" :save="t => saveEdit(c, t)" @report="startReport(c)" @vote="vote(c, $event)" @reply="startReply(c.id, c, false)" @ask-delete="confirmId = c.id" @cancel-delete="confirmId = null" @remove="remove(c.id)" />
+          <CommentItem :c="c" :save="t => saveEdit(c, t)" @report="startReport(c)" @vote="vote(c, $event)" @reply="startReply(c.id, c, false)" @remove="remove(c.id)" />
           <ul v-if="c.replies.length" class="ml-4 mt-2 space-y-3 border-l border-line pl-3 sm:ml-11">
             <li v-for="r in c.replies" :key="r.id">
-              <CommentItem :c="r" :confirming="confirmId === r.id" :save="t => saveEdit(r, t)" @report="startReport(r)" @vote="vote(r, $event)" @reply="startReply(c.id, r, true)" @ask-delete="confirmId = r.id" @cancel-delete="confirmId = null" @remove="remove(r.id)" />
+              <CommentItem :c="r" :save="t => saveEdit(r, t)" @report="startReport(r)" @vote="vote(r, $event)" @reply="startReply(c.id, r, true)" @remove="remove(r.id)" />
             </li>
           </ul>
           <form v-if="replyTo?.thread === c.id" class="ml-4 mt-3 sm:ml-11" @submit.prevent="sendReply">

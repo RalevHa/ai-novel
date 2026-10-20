@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { client, ok } from '../api'
 import { fmtDateTime } from '../genre'
 import { useAuth } from '../stores/auth'
+import { ask } from '../confirm'
 import { toast, toastError } from '../toast'
 import Button from './ui/Button.vue'
 import Pager from './ui/Pager.vue'
@@ -19,7 +20,7 @@ const fetchPage = (page: number) => ok(client.api.stories({ id: props.storyId })
 const data = ref<Awaited<ReturnType<typeof fetchPage>> | null>(null)
 // Eden turns timestamps into Date objects, so compare the times, not the objects (`!==` on two Dates is always true)
 const edited = (r: { createdAt: string | Date; updatedAt: string | Date }) => +new Date(r.updatedAt) !== +new Date(r.createdAt)
-const page = ref(1), rating = ref(0), text = ref(''), busy = ref(false), confirmId = ref<number | null>(null)
+const page = ref(1), rating = ref(0), text = ref(''), busy = ref(false)
 
 async function load() {
   try {
@@ -44,7 +45,7 @@ async function send() {
 
 // votes and replies under a review (same rules as chapter comments; replies are one flat list)
 const REPLY_MAX = 1000
-const replyingTo = ref<number | null>(null), replyText = ref(''), confirmReply = ref<number | null>(null)
+const replyingTo = ref<number | null>(null), replyText = ref('')
 const vote = (r: { id: number; score: number; myVote: number | null }, value: -1 | 0 | 1) =>
   ok(client.api.reviews({ id: r.id }).vote.put({ value })).then(v => Object.assign(r, v), toastError)
 async function sendReply(reviewId: number) {
@@ -55,14 +56,16 @@ async function sendReply(reviewId: number) {
   } catch (e) { toastError(e) } finally { busy.value = false }
 }
 async function removeReply(id: number) {
-  try { await ok(client.api['review-replies']({ id }).delete()); confirmReply.value = null; await load() } catch (e) { toastError(e) }
+  if (!await ask({ title: 'ลบการตอบกลับนี้?', body: 'ลบแล้วกู้คืนไม่ได้', confirmLabel: 'ลบ' })) return
+  try { await ok(client.api['review-replies']({ id }).delete()); await load() } catch (e) { toastError(e) }
 }
 const voteBtn = (on: boolean) => ['grid size-11 place-items-center rounded-lg hover:bg-fg/5 disabled:opacity-40 sm:size-8', on && 'text-primary']
 
 async function remove(id: number) {
+  const mine = data.value?.mine?.id === id
+  if (!await ask({ title: mine ? 'ลบรีวิวของคุณ?' : 'ลบรีวิวนี้?', body: 'ลบแล้วกู้คืนไม่ได้', confirmLabel: 'ลบ' })) return
   try {
-    const mine = data.value?.mine?.id === id
-    await ok(client.api.reviews({ id }).delete()); confirmId.value = null
+    await ok(client.api.reviews({ id }).delete())
     if (mine) { rating.value = 0; text.value = '' }
     await load()
   } catch (e) { toastError(e) }
@@ -117,13 +120,7 @@ async function remove(id: number) {
           <span class="flex text-primary" role="img" :aria-label="`${r.rating} ดาว`"><Star v-for="n in 5" :key="n" :class="['size-3.5', n <= r.rating && 'fill-current']" aria-hidden="true" /></span>
           <span class="muted text-xs">{{ fmtDateTime(r.updatedAt) }}<template v-if="edited(r)"> (แก้ไขแล้ว)</template></span>
           <span class="flex-1" />
-          <template v-if="r.canDelete">
-            <Button v-if="confirmId !== r.id" variant="ghost" size="sm" @click="confirmId = r.id">ลบ</Button>
-            <template v-else>
-              <Button variant="danger" size="sm" @click="remove(r.id)">ยืนยันลบ</Button>
-              <Button variant="ghost" size="sm" @click="confirmId = null">ยกเลิก</Button>
-            </template>
-          </template>
+          <Button v-if="r.canDelete" variant="ghost" size="sm" @click="remove(r.id)">ลบ</Button>
         </div>
         <p v-if="r.body" class="mt-1 whitespace-pre-wrap break-words leading-relaxed">{{ r.body }}</p>
         <div class="mt-1 flex flex-wrap items-center gap-1">
@@ -139,13 +136,7 @@ async function remove(id: number) {
               <span v-if="p.isAuthor" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">ผู้แต่ง</span>
               <span class="muted text-xs">{{ fmtDateTime(p.createdAt) }}</span>
               <span class="flex-1" />
-              <template v-if="p.canDelete">
-                <Button v-if="confirmReply !== p.id" variant="ghost" size="sm" @click="confirmReply = p.id">ลบ</Button>
-                <template v-else>
-                  <Button variant="danger" size="sm" @click="removeReply(p.id)">ยืนยันลบ</Button>
-                  <Button variant="ghost" size="sm" @click="confirmReply = null">ยกเลิก</Button>
-                </template>
-              </template>
+              <Button v-if="p.canDelete" variant="ghost" size="sm" @click="removeReply(p.id)">ลบ</Button>
             </div>
             <p class="mt-0.5 whitespace-pre-wrap break-words leading-relaxed">{{ p.body }}</p>
           </li>

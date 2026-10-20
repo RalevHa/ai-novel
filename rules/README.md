@@ -1,7 +1,7 @@
 # rules/
 
 Cross-cutting rules the AI engineer must load at task startup (Step 1 of `/project-os`).
-Organized in six categories:
+Organized in seven categories:
 
 | # | File | Covers |
 |---|------|--------|
@@ -11,6 +11,7 @@ Organized in six categories:
 | 04 | `04-security.md` | SQL injection, input validation, no hardcoded secrets, parameterized queries, authorization |
 | 05 | `05-performance.md` | Right algorithm, avoid N+1, avoid needless loops, async, measure first |
 | 06 | `06-database.md` | Transactions, naming, readable SQL, indexes, idempotent migrations, no `SELECT *` |
+| 07 | `07-ui-ux.md` | Theme tokens, Thai copy, reusable `ui/` components, confirm dialogs (`ask()`), touch targets, a11y |
 
 Add more rule files as the project needs them (e.g. `api.md`, `ui.md`, `testing.md`).
 Keep each rule in exactly one place — link, do not duplicate.

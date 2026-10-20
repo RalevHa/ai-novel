@@ -8,6 +8,7 @@ import OtpInput from '../components/OtpInput.vue'
 import Textarea from '../components/ui/Textarea.vue'
 import { fmtDate } from '../genre'
 import { useAuth } from '../stores/auth'
+import { ask } from '../confirm'
 import { toast, toastError } from '../toast'
 
 const auth = useAuth(), router = useRouter()
@@ -18,7 +19,7 @@ const busy = ref(false)
 
 // a writer's own OpenRouter key: the server stores it encrypted and only ever tells us "set" + the last 4 characters
 const loadKey = () => ok(client.api.me['ai-key'].get())
-const aiKey = ref<Awaited<ReturnType<typeof loadKey>> | null>(null), keyText = ref(''), keyBusy = ref(false), changing = ref(false), confirmRemove = ref(false)
+const aiKey = ref<Awaited<ReturnType<typeof loadKey>> | null>(null), keyText = ref(''), keyBusy = ref(false), changing = ref(false)
 onMounted(async () => { if (auth.canWrite) { try { aiKey.value = await loadKey() } catch (e) { toastError(e) } } })
 async function saveKey() {
   keyBusy.value = true
@@ -26,8 +27,9 @@ async function saveKey() {
   catch (e) { toastError(e) } finally { keyBusy.value = false }
 }
 async function removeKey() {
+  if (!await ask({ title: 'ลบคีย์ AI ของคุณ?', body: 'ลบแล้วจะใช้ปุ่ม AI ไม่ได้จนกว่าจะตั้งคีย์ใหม่', confirmLabel: 'ลบคีย์' })) return
   keyBusy.value = true
-  try { aiKey.value = await ok(client.api.me['ai-key'].delete()); confirmRemove.value = false; toast('ลบคีย์แล้ว') }
+  try { aiKey.value = await ok(client.api.me['ai-key'].delete()); toast('ลบคีย์แล้ว') }
   catch (e) { toastError(e) } finally { keyBusy.value = false }
 }
 
@@ -130,11 +132,7 @@ async function save() {
         <p class="text-sm">ตั้งคีย์ไว้แล้ว <span class="font-mono">…{{ aiKey.last4 }}</span><template v-if="aiKey.updatedAt"> · เมื่อ {{ fmtDate(aiKey.updatedAt) }}</template></p>
         <div class="mt-3 flex flex-wrap gap-2">
           <Button variant="outline" size="sm" @click="changing = true">เปลี่ยนคีย์</Button>
-          <Button v-if="!confirmRemove" variant="ghost" size="sm" @click="confirmRemove = true">ลบคีย์</Button>
-          <template v-else>
-            <Button variant="danger" size="sm" :loading="keyBusy" @click="removeKey">ยืนยันลบคีย์</Button>
-            <Button variant="ghost" size="sm" @click="confirmRemove = false">ยกเลิก</Button>
-          </template>
+          <Button variant="ghost" size="sm" :loading="keyBusy" @click="removeKey">ลบคีย์</Button>
         </div>
       </div>
       <form v-else @submit.prevent="saveKey">

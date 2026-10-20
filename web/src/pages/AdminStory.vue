@@ -23,6 +23,7 @@ import Textarea from '../components/ui/Textarea.vue'
 import { fmtCost, fmtDateTime, fromLocalInput, parseDb, toLocalInput } from '../genre'
 import { MODELS } from '../models'
 import { setTitle } from '../title'
+import { ask } from '../confirm'
 import { toast, toastError } from '../toast'
 
 const id = useRoute().params.id as string
@@ -49,7 +50,7 @@ let ctrl: AbortController | null = null
 const LEAVE_MSG = 'กำลังเขียนตอนอยู่ ถ้าออกจากหน้านี้ จะเก็บเฉพาะส่วนที่เขียนไว้แล้วเป็นฉบับร่าง'
 const warnUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
 watch(streaming, on => on ? addEventListener('beforeunload', warnUnload) : removeEventListener('beforeunload', warnUnload))
-onBeforeRouteLeave(() => !streaming.value || confirm(LEAVE_MSG))
+onBeforeRouteLeave(() => !streaming.value || ask({ title: 'ออกจากหน้านี้?', body: LEAVE_MSG, confirmLabel: 'ออกจากหน้านี้' }))
 
 // bulk publish / hide
 const selected = ref<number[]>([]), bulkBusy = ref(false)
@@ -75,7 +76,7 @@ async function showHistory() {
 }
 async function restoreVersion(v: Version) {
   if (!edit.value) return
-  if (JSON.stringify(edit.value) !== editOrig.value && !confirm('มีการแก้ไขที่ยังไม่ได้บันทึก กู้คืนแล้วจะหายทั้งหมด กู้คืนเลยไหม?')) return
+  if (JSON.stringify(edit.value) !== editOrig.value && !await ask({ title: 'กู้คืนฉบับนี้?', body: 'มีการแก้ไขที่ยังไม่ได้บันทึก กู้คืนแล้วจะหายทั้งหมด', confirmLabel: 'กู้คืน' })) return
   restoring.value = v.id
   try {
     await ok(client.api.admin.chapters({ id: edit.value.id }).restore({ version: v.id }).post())
@@ -164,8 +165,8 @@ async function openEdit(c: { id: number }) {
     edit.value = { id: r.id, no: r.no, title: r.title, content: r.content, summary: r.summary, publishAt: toLocalInput(r.publishAt) }; editTab.value = 'content'; editOrig.value = JSON.stringify(edit.value); schedOrig = edit.value.publishAt
   } catch (e) { toastError(e) }
 }
-function closeEdit() {
-  if (edit.value && JSON.stringify(edit.value) !== editOrig.value && !confirm('มีการแก้ไขที่ยังไม่ได้บันทึก ปิดแล้วจะหายทั้งหมด ปิดเลยไหม?')) return
+async function closeEdit() {
+  if (edit.value && JSON.stringify(edit.value) !== editOrig.value && !await ask({ title: 'ปิดโดยไม่บันทึก?', body: 'มีการแก้ไขที่ยังไม่ได้บันทึก ปิดแล้วจะหายทั้งหมด', confirmLabel: 'ปิดโดยไม่บันทึก' })) return
   edit.value = null
 }
 let schedOrig = '' // the schedule when the dialog opened; only a changed one is sent

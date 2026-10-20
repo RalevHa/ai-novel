@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { ImagePlus, Trash2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
+import { ask } from '../confirm'
 import { prepareImage } from '../image'
 import { toast, toastError } from '../toast'
 import BookCover from './BookCover.vue'
@@ -21,6 +22,7 @@ async function upload(file: File) {
   } catch (err) { toastError(err) } finally { busy.value = false }
 }
 async function remove() {
+  if (!await ask({ title: 'ลบรูปปก?', body: 'จะกลับไปใช้ปกอัตโนมัติแทน', confirmLabel: 'ลบรูป' })) return
   busy.value = true
   try { await ok(client.api.admin.stories({ id: props.storyId }).cover.delete()); toast('ลบรูปปกแล้ว ใช้ปกอัตโนมัติแทน'); emit('changed') }
   catch (err) { toastError(err) } finally { busy.value = false }

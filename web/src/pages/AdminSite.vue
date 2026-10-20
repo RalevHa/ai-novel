@@ -9,6 +9,7 @@ import Modal from '../components/ui/Modal.vue'
 import RichEditor from '../components/RichEditor.vue'
 import Tabs from '../components/ui/Tabs.vue'
 import Textarea from '../components/ui/Textarea.vue'
+import { ask } from '../confirm'
 import { fmtDateTime } from '../genre'
 import { previewPlaceholders, renderDoc } from '../infoDoc'
 import { toast, toastError } from '../toast'
@@ -33,14 +34,14 @@ async function saveSettings() {
 // ---- editing one page
 const editing = ref<Slug | null>(null), tab = ref('write'), title = ref(''), body = ref(''), original = ref(''), isDefault = ref(true)
 const shipped = ref<{ title: string; body: string } | null>(null), revisions = ref<Awaited<ReturnType<typeof loadRevisions>>>([])
-const busy = ref(false), confirmReset = ref(false)
+const busy = ref(false)
 const dirty = () => editing.value !== null && JSON.stringify([title.value, body.value]) !== original.value
 
 async function open(slug: Slug) {
   try {
     const p = await ok(client.api.admin.pages({ slug }).get())
     title.value = p.title; body.value = p.body; original.value = JSON.stringify([p.title, p.body]); isDefault.value = p.isDefault; shipped.value = p.default
-    tab.value = 'write'; confirmReset.value = false; revisions.value = []; editing.value = slug
+    tab.value = 'write'; revisions.value = []; editing.value = slug
   } catch (e) { toastError(e) }
 }
 async function showHistory() {
@@ -62,13 +63,14 @@ async function save() {
   } catch (e) { toastError(e) } finally { busy.value = false }
 }
 async function resetToDefault() {
+  if (!await ask({ title: 'แทนที่ด้วยข้อความตั้งต้น?', body: 'เนื้อหาที่แก้ไว้จะถูกแทนที่ ฉบับเดิมยังดูได้ในแท็บ "ประวัติ"', confirmLabel: 'ใช้ข้อความตั้งต้น' })) return
   busy.value = true
   try {
     await ok(client.api.admin.pages({ slug: editing.value! }).delete())
     toast('กลับไปใช้ข้อความตั้งต้นแล้ว'); editing.value = null; pages.value = await loadPages()
   } catch (e) { toastError(e) } finally { busy.value = false }
 }
-const close = () => { if (!dirty() || window.confirm('มีการแก้ไขที่ยังไม่ได้บันทึก ปิดโดยไม่บันทึกหรือไม่?')) editing.value = null }
+const close = async () => { if (!dirty() || await ask({ title: 'ปิดโดยไม่บันทึก?', body: 'มีการแก้ไขที่ยังไม่ได้บันทึก ปิดแล้วจะหายทั้งหมด', confirmLabel: 'ปิดโดยไม่บันทึก' })) editing.value = null }
 const preview = () => renderDoc(previewPlaceholders(body.value, { operator: operator.value, contactEmail: email.value }))
 const PATH: Record<Slug, string> = { terms: '/terms', privacy: '/privacy', guide: '/guide', about: '/about', contact: '/contact' }
 
@@ -142,16 +144,9 @@ onMounted(async () => {
     </div>
 
     <template #footer>
-      <Button v-if="!isDefault && !confirmReset" variant="ghost" class="mr-auto" @click="confirmReset = true">ใช้ข้อความตั้งต้น</Button>
-      <template v-if="confirmReset">
-        <span class="mr-auto self-center text-sm">แทนที่ด้วยข้อความตั้งต้น?</span>
-        <Button variant="danger" :loading="busy" @click="resetToDefault">ยืนยัน</Button>
-        <Button variant="ghost" @click="confirmReset = false">ไม่</Button>
-      </template>
-      <template v-else>
-        <Button variant="ghost" @click="close">ยกเลิก</Button>
-        <Button :loading="busy" :disabled="!dirty()" @click="save">บันทึก</Button>
-      </template>
+      <Button v-if="!isDefault" variant="ghost" class="mr-auto" :loading="busy" @click="resetToDefault">ใช้ข้อความตั้งต้น</Button>
+      <Button variant="ghost" @click="close">ยกเลิก</Button>
+      <Button :loading="busy" :disabled="!dirty()" @click="save">บันทึก</Button>
     </template>
   </Modal>
 </template>
