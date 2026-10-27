@@ -181,17 +181,18 @@ export const reviewReplies = pgTable('review_replies', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [index('review_replies_review_idx').on(t.reviewId, t.id)])
 
-// "someone replied to you" / "your comment got an upvote". One row per (recipient, kind, comment): a new upvote on the same comment
-// just marks its row unread again; the score shown is read live from the comment
+// "someone replied to you" / "your comment got an upvote" / "someone answered your review". One row per (recipient, kind, comment): a new upvote
+// on the same comment just marks its row unread again; the score shown is read live from the comment
 export const notifications = pgTable('notifications', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  type: text('type', { enum: ['reply', 'vote'] }).notNull(),
+  type: text('type', { enum: ['reply', 'vote', 'review_reply'] }).notNull(),
   actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }), // who replied; null for votes (voters stay anonymous)
-  commentId: integer('comment_id').notNull().references(() => comments.id, { onDelete: 'cascade' }), // the reply itself, or the comment that was voted on
+  commentId: integer('comment_id').references(() => comments.id, { onDelete: 'cascade' }), // the reply itself, or the comment that was voted on; null for review replies
+  reviewReplyId: integer('review_reply_id').references(() => reviewReplies.id, { onDelete: 'cascade' }), // set only for type 'review_reply'
   readAt: timestamp('read_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-}, t => [unique('notifications_user_type_comment_key').on(t.userId, t.type, t.commentId), index('notifications_user_idx').on(t.userId, t.id)])
+}, t => [unique('notifications_user_type_comment_key').on(t.userId, t.type, t.commentId), unique('notifications_user_review_reply_key').on(t.userId, t.reviewReplyId), index('notifications_user_idx').on(t.userId, t.id)])
 
 // readers flag comments for the admins; one open report per reader per comment, dismissed or acted on from /admin/reports
 export const commentReports = pgTable('comment_reports', {

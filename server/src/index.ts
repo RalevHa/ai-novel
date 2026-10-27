@@ -1,5 +1,5 @@
 import { cors } from '@elysiajs/cors'
-import { and, asc, desc, eq, ilike, inArray, isNull, max, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, max, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { join } from 'node:path'
 import { Elysia, status, t } from 'elysia'
@@ -16,7 +16,7 @@ import { ogPage } from './og'
 import { checkCode, sendCode } from './otp'
 import { imageNames, stripImages } from './markdown'
 import { markDone, nextBeat } from './outline'
-import { pageQuery, paging } from './paging'
+import { pageOf, pageQuery, paging } from './paging'
 import { forgive, limited } from './ratelimit'
 import { pruneUnused, sweepOrphans } from './media'
 import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './uploads'
@@ -222,19 +222,25 @@ type CommentSort = 'new' | 'top' | 'replies'
 const scoreSql = sql<number>`coalesce((select sum(value) from comment_votes where comment_id = comments.id), 0)::int`
 const replyCountSql = sql<number>`(select count(*)::int from comments r where r.parent_id = comments.id)`
 
-async function listComments(storyId: number, no: number, query: { page?: number; size?: number; sort?: CommentSort }, me: { id: number; role: string } | null) {
+async function listComments(storyId: number, no: number, query: { page?: number; size?: number; sort?: CommentSort; focus?: number }, me: { id: number; role: string } | null) {
   const chapterId = await liveChapterId(storyId, no)
   if (!chapterId) return status(404, { error: 'ไม่พบข้อมูล' })
   const inChapter = eq(comments.chapterId, chapterId)
   const topLevel = and(inChapter, isNull(comments.parentId))
   const [total, all] = await Promise.all([db.$count(comments, topLevel), db.$count(comments, inChapter)]) // total pages top-level threads; all includes replies
-  const { page, size, offset } = paging(query, total, 'first', 20)
+  // `focus` opens the list on the page holding that comment (a reply counts as its thread); it implies the newest-first order the page is counted in
+  let { sort, page: want } = query
+  if (query.focus !== undefined) {
+    const [f] = await db.select({ id: comments.id, parentId: comments.parentId }).from(comments).where(and(eq(comments.id, query.focus), inChapter))
+    if (f) { sort = 'new'; want = pageOf(await db.$count(comments, and(topLevel, gt(comments.id, f.parentId ?? f.id))), query.size ?? 20) }
+  }
+  const { page, size, offset } = paging({ page: want, size: query.size }, total, 'first', 20)
   const fields = {
     id: comments.id, parentId: comments.parentId, body: comments.body, createdAt: comments.createdAt, editedAt: comments.editedAt, userId: comments.userId, userName: users.name, storyAuthor: stories.authorId,
     score: scoreSql, myVote: me ? sql<number | null>`(select value from comment_votes where comment_id = comments.id and user_id = ${me.id})` : sql<number | null>`null`,
   }
   const base = () => db.select(fields).from(comments).innerJoin(users, eq(users.id, comments.userId)).innerJoin(stories, eq(stories.id, comments.storyId))
-  const order = { new: [desc(comments.id)], top: [desc(scoreSql), desc(comments.id)], replies: [desc(replyCountSql), desc(comments.id)] }[query.sort ?? 'new']
+  const order = { new: [desc(comments.id)], top: [desc(scoreSql), desc(comments.id)], replies: [desc(replyCountSql), desc(comments.id)] }[sort ?? 'new']
   const tops = await base().where(topLevel).orderBy(...order).limit(size).offset(offset)
   // ponytail: every reply of the threads on this page, oldest first; paginate replies per thread if a thread ever gets huge
   const replies = tops.length ? await base().where(inArray(comments.parentId, tops.map(c => c.id))).orderBy(asc(comments.id)).limit(500) : []
@@ -277,13 +283,19 @@ async function voteComment(commentId: number, value: -1 | 0 | 1, me: { id: numbe
 }
 
 // Reviews of a whole story (shown on its contents page): one per reader, 1-5 stars plus optional text. The author cannot review their own story.
-async function listReviews(storyId: number, query: { page?: number; size?: number }, me: { id: number; role: string } | null) {
+async function listReviews(storyId: number, query: { page?: number; size?: number; focus?: number }, me: { id: number; role: string } | null) {
   if (!(await db.query.stories.findFirst({ where: and(eq(stories.id, storyId), eq(stories.published, true)), columns: { id: true } }))) return status(404, { error: 'ไม่พบข้อมูล' })
   const where = eq(reviews.storyId, storyId)
   const counts = await db.select({ rating: reviews.rating, n: sql<number>`count(*)::int` }).from(reviews).where(where).groupBy(reviews.rating)
   const dist = [1, 2, 3, 4, 5].map(r => counts.find(c => c.rating === r)?.n ?? 0) // index 0 = one star
   const total = dist.reduce((a, b) => a + b, 0)
-  const { page, size, offset } = paging(query, total, 'first', 10)
+  // `focus` opens the list on the page holding that review (same order as below: edited most recently first)
+  let want = query.page
+  if (query.focus !== undefined) {
+    const ahead = await db.$count(reviews, and(where, sql`(${reviews.updatedAt}, ${reviews.id}) > (select r.updated_at, r.id from reviews r where r.id = ${query.focus} and r.story_id = ${storyId})`))
+    if (await db.$count(reviews, and(where, eq(reviews.id, query.focus)))) want = pageOf(ahead, query.size ?? 10)
+  }
+  const { page, size, offset } = paging({ page: want, size: query.size }, total, 'first', 10)
   const rows = await db.select({
     id: reviews.id, rating: reviews.rating, body: reviews.body, createdAt: reviews.createdAt, updatedAt: reviews.updatedAt, userId: reviews.userId, userName: users.name,
     score: sql<number>`coalesce((select sum(value) from review_votes where review_id = reviews.id), 0)::int`,
@@ -330,9 +342,10 @@ async function addReviewReply(reviewId: number, text: string, me: { id: number }
   const body = text.trim()
   if (!body) return status(422, { error: 'พิมพ์ข้อความก่อน' })
   if (limited(`comment:${me.id}`, 10, 10 * 60_000)) return status(429, { error: 'คอมเมนต์บ่อยเกินไป รอสักครู่แล้วลองใหม่' })
-  const [r] = await db.select({ id: reviews.id }).from(reviews).innerJoin(stories, eq(stories.id, reviews.storyId)).where(and(eq(reviews.id, reviewId), eq(stories.published, true)))
+  const [r] = await db.select({ id: reviews.id, userId: reviews.userId }).from(reviews).innerJoin(stories, eq(stories.id, reviews.storyId)).where(and(eq(reviews.id, reviewId), eq(stories.published, true)))
   if (!r) return status(404, { error: 'ไม่พบข้อมูล' })
   const [row] = await db.insert(reviewReplies).values({ reviewId, userId: me.id, body }).returning({ id: reviewReplies.id })
+  if (r.userId !== me.id) await db.insert(notifications).values({ userId: r.userId, type: 'review_reply', actorId: me.id, reviewReplyId: row.id }) // the reviewer hears about answers (their own follow-ups stay quiet)
   return row
 }
 
@@ -358,7 +371,7 @@ const commentRoutes = new Elysia()
   }, { params: t.Object({ id: t.Numeric(), no: t.Numeric() }) })
   .put('/stories/:id/chapters/:no/like', ({ params, me }) => setLike(params.id, params.no, true, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), ...userOnly })
   .delete('/stories/:id/chapters/:no/like', ({ params, me }) => setLike(params.id, params.no, false, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), ...userOnly })
-  .get('/stories/:id/chapters/:no/comments', ({ params, query, me }) => listComments(params.id, params.no, query, me), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), query: t.Object({ ...pageQuery.properties, sort: t.Optional(t.Union([t.Literal('new'), t.Literal('top'), t.Literal('replies')])) }) })
+  .get('/stories/:id/chapters/:no/comments', ({ params, query, me }) => listComments(params.id, params.no, query, me), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), query: t.Object({ ...pageQuery.properties, sort: t.Optional(t.Union([t.Literal('new'), t.Literal('top'), t.Literal('replies')])), focus: t.Optional(t.Numeric()) }) })
   .post('/stories/:id/chapters/:no/comments', ({ params, body, me }) => addComment(params.id, params.no, body.body, body.parentId, me!), { params: t.Object({ id: t.Numeric(), no: t.Numeric() }), body: t.Object({ body: t.String({ maxLength: COMMENT_MAX }), parentId: t.Optional(t.Integer()) }), ...userOnly })
   .put('/comments/:id/vote', ({ params, body, me }) => voteComment(params.id, body.value, me!), { ...id, body: t.Object({ value: t.Union([t.Literal(-1), t.Literal(0), t.Literal(1)]) }), ...userOnly })
   .delete('/comments/:id', async ({ params, me }) => {
@@ -393,7 +406,7 @@ const commentRoutes = new Elysia()
       .onConflictDoUpdate({ target: [commentReports.commentId, commentReports.reporterId], set: { reason: body.reason?.trim() ?? '', resolvedAt: null, createdAt: sql`now()` } })
     return { ok: true }
   }, { ...id, body: t.Object({ reason: t.Optional(t.String({ maxLength: 300 })) }), ...userOnly })
-  .get('/stories/:id/reviews', ({ params, query, me }) => listReviews(params.id, query, me), { ...id, query: pageQuery })
+  .get('/stories/:id/reviews', ({ params, query, me }) => listReviews(params.id, query, me), { ...id, query: t.Object({ ...pageQuery.properties, focus: t.Optional(t.Numeric()) }) })
   .put('/stories/:id/reviews', ({ params, body, me }) => saveReview(params.id, body.rating, body.body ?? '', me!), { ...id, body: t.Object({ rating: t.Integer({ minimum: 1, maximum: 5 }), body: t.Optional(t.String({ maxLength: REVIEW_MAX })) }), ...userOnly })
   .put('/reviews/:id/vote', ({ params, body, me }) => voteReview(params.id, body.value, me!), { ...id, body: t.Object({ value: t.Union([t.Literal(-1), t.Literal(0), t.Literal(1)]) }), ...userOnly })
   .post('/reviews/:id/replies', ({ params, body, me }) => addReviewReply(params.id, body.body, me!), { ...id, body: t.Object({ body: t.String({ maxLength: COMMENT_MAX }) }), ...userOnly })
@@ -547,15 +560,26 @@ const meRoutes = new Elysia({ prefix: '/me' })
     // Those chapter items are worked out on the fly, not stored, so a scheduled (drip) chapter shows up exactly when it goes live and
     // disappears once it is read. Opening the page marks the rest read (POST /notifications/read).
     .get('/notifications', async ({ me }) => {
+      type Kind = 'reply' | 'vote' | 'review_reply' | 'chapter'
+      // one shape for every kind so the page can switch on `type`; ids that do not apply are null (and `no` is 0 for a review reply)
+      const item = (key: string, type: Kind, createdAt: Date, actor: string | null, storyId: number, storyTitle: string, no: number, extra: { score?: number; count?: number; unread: boolean; snippet?: string; commentId?: number | null; reviewId?: number | null; replyId?: number | null }) =>
+        ({ key, type, createdAt, actor, storyId, storyTitle, no, score: 0, count: 1, snippet: '', commentId: null, reviewId: null, replyId: null, ...extra })
+      const flat = (body: string) => body.replace(/\s+/g, ' ').slice(0, 140)
       const stored = (await db.select({
         id: notifications.id, type: notifications.type, readAt: notifications.readAt, createdAt: notifications.createdAt, actor: users.name,
-        body: comments.body, storyId: comments.storyId, storyTitle: stories.title, no: chapters.no, score: scoreSql,
+        body: comments.body, commentId: comments.id, storyId: comments.storyId, storyTitle: stories.title, no: chapters.no, score: scoreSql,
       }).from(notifications).innerJoin(comments, eq(comments.id, notifications.commentId)).innerJoin(stories, eq(stories.id, comments.storyId)).innerJoin(chapters, eq(chapters.id, comments.chapterId))
         .leftJoin(users, eq(users.id, notifications.actorId)).where(eq(notifications.userId, me!.id)).orderBy(desc(notifications.createdAt)).limit(50))
-        .map(({ id, readAt, body, ...n }) => ({ ...n, key: `n${id}`, count: 1, unread: readAt === null, snippet: body.replace(/\s+/g, ' ').slice(0, 140) }))
+        .map(n => item(`n${n.id}`, n.type as Kind, n.createdAt, n.actor, n.storyId, n.storyTitle, n.no, { score: n.score, unread: n.readAt === null, snippet: flat(n.body), commentId: n.commentId }))
+      const answered = (await db.select({
+        id: notifications.id, readAt: notifications.readAt, createdAt: notifications.createdAt, actor: users.name,
+        body: reviewReplies.body, replyId: reviewReplies.id, reviewId: reviews.id, storyId: reviews.storyId, storyTitle: stories.title,
+      }).from(notifications).innerJoin(reviewReplies, eq(reviewReplies.id, notifications.reviewReplyId)).innerJoin(reviews, eq(reviews.id, reviewReplies.reviewId)).innerJoin(stories, eq(stories.id, reviews.storyId))
+        .leftJoin(users, eq(users.id, notifications.actorId)).where(eq(notifications.userId, me!.id)).orderBy(desc(notifications.createdAt)).limit(50))
+        .map(n => item(`r${n.id}`, 'review_reply', n.createdAt, n.actor, n.storyId, n.storyTitle, 0, { unread: n.readAt === null, snippet: flat(n.body), reviewId: n.reviewId, replyId: n.replyId }))
       const chaptersDue = (await newChapterStories(me!.id))
-        .map(c => ({ key: `c${c.storyId}`, type: 'chapter' as 'reply' | 'vote' | 'chapter', createdAt: new Date(c.at.replace(' ', 'T') + 'Z'), actor: null as string | null, storyId: c.storyId, storyTitle: c.storyTitle, no: c.firstNo, score: 0, count: c.count, unread: c.fresh, snippet: '' }))
-      return [...stored.map(n => ({ ...n, type: n.type as 'reply' | 'vote' | 'chapter' })), ...chaptersDue].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 50)
+        .map(c => item(`c${c.storyId}`, 'chapter', new Date(c.at.replace(' ', 'T') + 'Z'), null, c.storyId, c.storyTitle, c.firstNo, { count: c.count, unread: c.fresh }))
+      return [...stored, ...answered, ...chaptersDue].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 50)
     })
     // The user's own OpenRouter key. It is only ever stored encrypted (bound to their user id) and never sent back: the page learns "set" and the last 4 characters.
     .get('/ai-key', async ({ me }) => aiKeyState(me!))

@@ -155,6 +155,13 @@
       "when": 1792399848998,
       "tag": "0021_chapter_bookmarks",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793093366683,
+      "tag": "0022_review_reply_notifications",
+      "breakpoints": true
     }
   ]
 }

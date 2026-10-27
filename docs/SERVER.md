@@ -66,7 +66,7 @@
 | | `characters` | ตัวละครของเรื่อง `visible` = แสดงให้ผู้อ่านเห็นหรือไม่ (AI เห็นทุกตัวเสมอ) |
 | ผู้อ่าน | `bookmarks` (ติดตามเรื่อง), `chapter_bookmarks`, `chapter_likes`, `reading_progress` (หนึ่งแถวต่อ ผู้ใช้+เรื่อง), `chapter_reads` | คีย์หลักผสม ไม่มีแถวซ้ำ ลบทั้งหมดเมื่อลบผู้ใช้/เรื่อง (cascade) |
 | ชุมชน | `comments` (`parentId` ซ้อนได้ชั้นเดียว), `comment_votes`, `reviews` (unique `(storyId, userId)`, ดาว 1–5), `review_votes`, `review_replies` (แถวเดียว ไม่ซ้อน) | `value` ของโหวต ∈ {-1, 1} |
-| | `notifications` | ชนิด `reply`/`vote` unique `(userId, type, commentId)`; `comment_reports` unique `(commentId, reporterId)` |
+| | `notifications` | ชนิด `reply`/`vote` (ชี้ `commentId`) และ `review_reply` (ชี้ `reviewReplyId`, `commentId` ว่าง) unique `(userId, type, commentId)` และ `(userId, reviewReplyId)`; `comment_reports` unique `(commentId, reporterId)` |
 | เว็บไซต์ | `site_settings`, `info_pages`, `info_page_revisions` | หน้าข้อมูลมีแถวเมื่อแอดมินแก้เท่านั้น ลบแถว = กลับไปข้อความตั้งต้น |
 | AI | `ai_usage` | ทุกการเรียกโมเดล: `kind` (generate/rewrite/summary/check/suggest/earlier), `source` (`own`/`site`), tokens, cost |
 
@@ -105,14 +105,14 @@
 |---|---|---|
 | `GET …/chapters/:no/likes` | ทุกคน | จำนวนไลก์ + ตัวเองกดไหม |
 | `PUT/DELETE …/chapters/:no/like` | ผู้ใช้ | กด/ถอนไลก์ |
-| `GET …/chapters/:no/comments` | ทุกคน | ความคิดเห็นหลักตามหน้า (เรียง `new`/`top`/`replies`) พร้อมคำตอบของแต่ละเธรด (สูงสุด 500) และ `canDelete`/`isAuthor` |
+| `GET …/chapters/:no/comments` | ทุกคน | ความคิดเห็นหลักตามหน้า (เรียง `new`/`top`/`replies`; `?focus=<id ความคิดเห็น>` เปิดที่หน้าที่มีความคิดเห็นนั้น บังคับเรียง `new`) พร้อมคำตอบของแต่ละเธรด (สูงสุด 500) และ `canDelete`/`isAuthor` |
 | `POST …/chapters/:no/comments` | ผู้ใช้ | ส่งความคิดเห็น/คำตอบ; ตอบคำตอบจะไปอยู่ใต้ความคิดเห็นหลักเดียวกัน; แจ้งเตือน `reply` ให้เจ้าของที่ถูกตอบ (ถ้าไม่ใช่ตัวเอง) |
 | `PATCH /comments/:id` | ผู้ใช้ | แก้ได้เฉพาะของตัวเอง ตั้ง `editedAt` |
 | `DELETE /comments/:id` | ผู้ใช้ | ลบได้: เจ้าของ แอดมิน ผู้แต่งเรื่อง; ถ้าลบของคนอื่นเขียน `audit_log` |
 | `PUT /comments/:id/vote` | ผู้ใช้ | `value` ∈ {-1,0,1} (0 = ถอน) โหวตของตัวเองไม่ได้; โหวตขึ้นใหม่สร้าง/รีเซ็ตแจ้งเตือน `vote` (ผู้โหวตไม่เปิดเผย ไม่แจ้งโหวตลง) |
 | `POST /comments/:id/report` | ผู้ใช้ | รายงาน (ของตัวเองไม่ได้); รายงานซ้ำเปิดเรื่องใหม่พร้อมเหตุผลใหม่ |
-| `GET/PUT /stories/:id/reviews` | ทุกคน/ผู้ใช้ | รายการรีวิวพร้อมการกระจายดาว / ส่งหรือแก้รีวิวของตัวเอง (ผู้แต่งรีวิวเรื่องตัวเองไม่ได้) |
-| `PUT /reviews/:id/vote`, `POST /reviews/:id/replies` | ผู้ใช้ | โหวต / ตอบกลับรีวิว |
+| `GET/PUT /stories/:id/reviews` | ทุกคน/ผู้ใช้ | รายการรีวิวพร้อมการกระจายดาว (`?focus=<id รีวิว>` เปิดที่หน้าที่มีรีวิวนั้น) / ส่งหรือแก้รีวิวของตัวเอง (ผู้แต่งรีวิวเรื่องตัวเองไม่ได้) |
+| `PUT /reviews/:id/vote`, `POST /reviews/:id/replies` | ผู้ใช้ | โหวต / ตอบกลับรีวิว (แจ้งเตือน `review_reply` ให้เจ้าของรีวิว ถ้าไม่ใช่ตัวเอง) |
 | `DELETE /reviews/:id` | ผู้ใช้ | ลบได้เฉพาะเจ้าของรีวิวและแอดมิน **ผู้แต่งเรื่องลบรีวิวเรื่องตัวเองไม่ได้** (กันซ่อนคำวิจารณ์) |
 | `DELETE /review-replies/:id` | ผู้ใช้ | ลบได้: เจ้าของ แอดมิน ผู้แต่งเรื่อง |
 
@@ -192,7 +192,7 @@
 - **เสนอตัวละคร (`suggestCharacters`):** โมเดลตอบ JSON; ใช้ `jsonrepair` แก้ความผิดพลาดเล็กน้อย กรองชื่อที่มีอยู่แล้ว สูงสุด 15
 
 ### 6.6 การแจ้งเตือน
-สองแหล่ง: (1) แถวใน `notifications` (`reply`, `vote`) (2) **คำนวณสด ไม่เก็บ**: เรื่องที่ติดตามที่มีตอนที่ขึ้นหลังวันที่ติดตาม และผู้อ่านยังไม่ได้อ่านจบ (`newChapterStories`) ตอนที่ตั้งเวลาจึงโผล่ตรงเวลาและหายไปเมื่ออ่านแล้ว `GET /notifications/count` (กระดิ่ง) นับแถวที่ยังไม่อ่าน + เรื่องที่มีตอนออกหลัง `notificationsSeenAt`; `POST /notifications/read` ตั้ง `readAt` ของทุกแถวและอัปเดต `notificationsSeenAt`
+สองแหล่ง: (1) แถวใน `notifications` (`reply`, `vote`, `review_reply`) (2) **คำนวณสด ไม่เก็บ**: เรื่องที่ติดตามที่มีตอนที่ขึ้นหลังวันที่ติดตาม และผู้อ่านยังไม่ได้อ่านจบ (`newChapterStories`) ตอนที่ตั้งเวลาจึงโผล่ตรงเวลาและหายไปเมื่ออ่านแล้ว `GET /notifications/count` (กระดิ่ง) นับแถวที่ยังไม่อ่าน + เรื่องที่มีตอนออกหลัง `notificationsSeenAt`; `POST /notifications/read` ตั้ง `readAt` ของทุกแถวและอัปเดต `notificationsSeenAt`
 
 ### 6.7 ความคืบหน้าการอ่าน
 `PUT /me/progress/:id` และ `POST /me/reads/:id` รับเฉพาะตอนที่ผู้อ่านเห็น (`isLive`) เพื่อให้ foreign key ถูกต้อง; `reading_progress` เก็บตอนล่าสุดและตำแหน่ง 0–1; `chapter_reads` เก็บตอนที่อ่านจบ ลบประวัติ (`DELETE /me/progress`) ไม่ลบเครื่องหมายอ่านจบ
