@@ -23,7 +23,7 @@ import { MIME_BY_EXT, NAME_RE, removeUpload, saveImage, UPLOAD_DIR } from './upl
 import { db } from './db'
 import { API_BASE, streamChat, type Usage } from './openrouter'
 import { encryptSecret } from './secrets'
-import { auditLog, bookmarks, chapterBookmarks, chapterLikes, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviewReplies, reviews, reviewVotes, readingProgress, stories, userAiKeys, users } from './schema'
+import { auditLog, authorFollows, bookmarks, chapterBookmarks, chapterLikes, chapterReads, chapters, chapterVersions, characters, commentReports, commentVotes, comments, notifications, reviewReplies, reviews, reviewVotes, readingProgress, stories, userAiKeys, users } from './schema'
 import { releasedAtFor } from './release'
 import { siteRoutes } from './site'
 import { restore, snapshot } from './versions'
@@ -452,6 +452,21 @@ async function newChapterStories(userId: number) {
     .groupBy(stories.id, stories.title, users.notificationsSeenAt)
 }
 
+// Stories by followed writers whose first chapter went live after the reader followed the writer, one row per story. Same idea as above: worked out on
+// the fly, so a scheduled story appears when it goes live. Left out once the reader follows the story itself (the chapter notices cover it) or has started reading it.
+async function newAuthorStories(userId: number) {
+  return db.select({
+    storyId: stories.id, storyTitle: stories.title, authorName: users.name, at: sql<string>`min(${chapters.releasedAt})`,
+    fresh: sql<boolean>`min(${chapters.releasedAt}) > coalesce((select notifications_seen_at from users where id = ${userId}), 'epoch'::timestamp)`,
+  }).from(authorFollows).innerJoin(stories, and(eq(stories.authorId, authorFollows.authorId), eq(stories.published, true))).innerJoin(users, eq(users.id, stories.authorId))
+    .innerJoin(chapters, eq(chapters.storyId, stories.id))
+    .where(and(eq(authorFollows.userId, userId), visible,
+      sql`not exists (select 1 from bookmarks b where b.user_id = ${userId} and b.story_id = stories.id)`,
+      sql`not exists (select 1 from reading_progress rp where rp.user_id = ${userId} and rp.story_id = stories.id)`))
+    .groupBy(stories.id, stories.title, users.name, authorFollows.createdAt)
+    .having(sql`min(${chapters.releasedAt}) > ${authorFollows.createdAt}`)
+}
+
 /** What the settings page may know about a user's AI access: whether they have a usable key, and its last 4 characters. Admins can also use `local:` models without one. */
 async function aiKeyState(me: { id: number; role: string }) {
   const usable = !!(await ownKey(me.id))
@@ -560,7 +575,7 @@ const meRoutes = new Elysia({ prefix: '/me' })
     // Those chapter items are worked out on the fly, not stored, so a scheduled (drip) chapter shows up exactly when it goes live and
     // disappears once it is read. Opening the page marks the rest read (POST /notifications/read).
     .get('/notifications', async ({ me }) => {
-      type Kind = 'reply' | 'vote' | 'review_reply' | 'chapter'
+      type Kind = 'reply' | 'vote' | 'review_reply' | 'chapter' | 'story'
       // one shape for every kind so the page can switch on `type`; ids that do not apply are null (and `no` is 0 for a review reply)
       const item = (key: string, type: Kind, createdAt: Date, actor: string | null, storyId: number, storyTitle: string, no: number, extra: { score?: number; count?: number; unread: boolean; snippet?: string; commentId?: number | null; reviewId?: number | null; replyId?: number | null }) =>
         ({ key, type, createdAt, actor, storyId, storyTitle, no, score: 0, count: 1, snippet: '', commentId: null, reviewId: null, replyId: null, ...extra })
@@ -579,7 +594,9 @@ const meRoutes = new Elysia({ prefix: '/me' })
         .map(n => item(`r${n.id}`, 'review_reply', n.createdAt, n.actor, n.storyId, n.storyTitle, 0, { unread: n.readAt === null, snippet: flat(n.body), reviewId: n.reviewId, replyId: n.replyId }))
       const chaptersDue = (await newChapterStories(me!.id))
         .map(c => item(`c${c.storyId}`, 'chapter', new Date(c.at.replace(' ', 'T') + 'Z'), null, c.storyId, c.storyTitle, c.firstNo, { count: c.count, unread: c.fresh }))
-      return [...stored, ...answered, ...chaptersDue].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 50)
+      const storiesDue = (await newAuthorStories(me!.id))
+        .map(c => item(`s${c.storyId}`, 'story', new Date(c.at.replace(' ', 'T') + 'Z'), c.authorName, c.storyId, c.storyTitle, 1, { unread: c.fresh }))
+      return [...stored, ...answered, ...chaptersDue, ...storiesDue].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 50)
     })
     // The user's own OpenRouter key. It is only ever stored encrypted (bound to their user id) and never sent back: the page learns "set" and the last 4 characters.
     .get('/ai-key', async ({ me }) => aiKeyState(me!))
@@ -602,7 +619,8 @@ const meRoutes = new Elysia({ prefix: '/me' })
     .get('/notifications/count', async ({ me }) => {
       // polled every minute by the bell; a user follows few stories, so the chapter query stays small
       const stored = await db.$count(notifications, and(eq(notifications.userId, me!.id), isNull(notifications.readAt)))
-      return { unread: stored + (await newChapterStories(me!.id)).filter(c => c.fresh).length }
+      const [chaptersDue, storiesDue] = await Promise.all([newChapterStories(me!.id), newAuthorStories(me!.id)])
+      return { unread: stored + chaptersDue.filter(c => c.fresh).length + storiesDue.filter(c => c.fresh).length }
     })
     .post('/notifications/read', async ({ me }) => {
       await db.update(notifications).set({ readAt: sql`now()` }).where(and(eq(notifications.userId, me!.id), isNull(notifications.readAt)))
@@ -615,6 +633,16 @@ const meRoutes = new Elysia({ prefix: '/me' })
       return { ok: true }
     }, id)
     .delete('/bookmarks/:id', async ({ params, me }) => { await db.delete(bookmarks).where(and(eq(bookmarks.userId, me!.id), eq(bookmarks.storyId, params.id))); return { ok: true } }, id)
+    // followed writers: the ids (for the follow button), follow (only a writer, or someone with a published story, and never yourself) and unfollow
+    .get('/author-follows', async ({ me }) => (await db.select({ id: authorFollows.authorId }).from(authorFollows).where(eq(authorFollows.userId, me!.id)).orderBy(desc(authorFollows.createdAt))).map(r => r.id))
+    .put('/author-follows/:id', async ({ params, me, status }) => {
+      if (params.id === me!.id) return status(422, { error: 'ติดตามตัวเองไม่ได้' })
+      const [a] = await db.select({ role: users.role }).from(users).where(eq(users.id, params.id))
+      if (!a || (a.role === 'user' && !(await db.query.stories.findFirst({ where: and(eq(stories.authorId, params.id), eq(stories.published, true)), columns: { id: true } })))) return status(404, { error: 'ไม่พบข้อมูล' })
+      await db.insert(authorFollows).values({ userId: me!.id, authorId: params.id }).onConflictDoNothing()
+      return { ok: true }
+    }, id)
+    .delete('/author-follows/:id', async ({ params, me }) => { await db.delete(authorFollows).where(and(eq(authorFollows.userId, me!.id), eq(authorFollows.authorId, params.id))); return { ok: true } }, id)
     // chapter bookmarks: the list for the bookmarks page, the chapter numbers marked in one story (for the reader's button), and mark / unmark
     .get('/chapter-bookmarks', ({ me }) => db.select({ storyId: stories.id, storyTitle: stories.title, genre: stories.genre, coverImage: stories.coverImage, no: chapters.no, title: chapters.title, createdAt: chapterBookmarks.createdAt })
       .from(chapterBookmarks).innerJoin(chapters, eq(chapters.id, chapterBookmarks.chapterId)).innerJoin(stories, eq(stories.id, chapters.storyId))

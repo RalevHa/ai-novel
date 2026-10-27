@@ -64,7 +64,7 @@
 | | `chapters` | unique `(storyId, no)`; `published` + `publishAt` + `releasedAt`; `summary`; `views`/`finishes` (นับรวมแบบไม่ระบุตัวตน); `tokens`/`cost` |
 | | `chapter_versions` | ข้อความก่อนถูกเขียนทับทุกครั้ง (เก็บ 10 ล่าสุด) |
 | | `characters` | ตัวละครของเรื่อง `visible` = แสดงให้ผู้อ่านเห็นหรือไม่ (AI เห็นทุกตัวเสมอ) |
-| ผู้อ่าน | `bookmarks` (ติดตามเรื่อง), `chapter_bookmarks`, `chapter_likes`, `reading_progress` (หนึ่งแถวต่อ ผู้ใช้+เรื่อง), `chapter_reads` | คีย์หลักผสม ไม่มีแถวซ้ำ ลบทั้งหมดเมื่อลบผู้ใช้/เรื่อง (cascade) |
+| ผู้อ่าน | `bookmarks` (ติดตามเรื่อง), `author_follows` (ติดตามผู้แต่ง คีย์ `(userId, authorId)`), `chapter_bookmarks`, `chapter_likes`, `reading_progress` (หนึ่งแถวต่อ ผู้ใช้+เรื่อง), `chapter_reads` | คีย์หลักผสม ไม่มีแถวซ้ำ ลบทั้งหมดเมื่อลบผู้ใช้/เรื่อง (cascade) |
 | ชุมชน | `comments` (`parentId` ซ้อนได้ชั้นเดียว), `comment_votes`, `reviews` (unique `(storyId, userId)`, ดาว 1–5), `review_votes`, `review_replies` (แถวเดียว ไม่ซ้อน) | `value` ของโหวต ∈ {-1, 1} |
 | | `notifications` | ชนิด `reply`/`vote` (ชี้ `commentId`) และ `review_reply` (ชี้ `reviewReplyId`, `commentId` ว่าง) unique `(userId, type, commentId)` และ `(userId, reviewReplyId)`; `comment_reports` unique `(commentId, reporterId)` |
 | เว็บไซต์ | `site_settings`, `info_pages`, `info_page_revisions` | หน้าข้อมูลมีแถวเมื่อแอดมินแก้เท่านั้น ลบแถว = กลับไปข้อความตั้งต้น |
@@ -125,6 +125,7 @@
 | `GET/PUT /prefs` | การตั้งค่าอ่านข้ามอุปกรณ์ (ค่าไม่รู้จักถูกตัดทิ้ง; body ว่าง 422 เพื่อไม่ล้างค่าที่มี) |
 | `GET /progress`, `PUT /progress/:id`, `DELETE /progress[/:id]` | ตำแหน่งที่อ่านค้าง (บันทึกได้เฉพาะตอนที่ผู้อ่านเห็น) / ลบประวัติ |
 | `GET /bookmarks`, `PUT/DELETE /bookmarks/:id`, `GET /following` | ชั้นหนังสือ (ติดตามเรื่อง) และหน้าเรื่องที่ติดตามพร้อมความคืบหน้า |
+| `GET /author-follows`, `PUT/DELETE /author-follows/:id` | ติดตามผู้แต่ง (ติดตามตัวเองไม่ได้ 422; ผู้แต่งที่ไม่ใช่นักเขียนและไม่มีเรื่องเผยแพร่ 404) |
 | `GET /chapter-bookmarks`, `GET/PUT/DELETE …/:id[/:no]` | บุ๊กมาร์กตอน |
 | `GET /reads/:id`, `POST /reads/:id` | ตอนที่อ่านจบ |
 | `GET /notifications`, `GET /notifications/count`, `POST /notifications/read` | ดู/นับ/ทำเครื่องหมายว่าอ่านแล้ว (ดูหัวข้อ 6.6) |
@@ -192,7 +193,7 @@
 - **เสนอตัวละคร (`suggestCharacters`):** โมเดลตอบ JSON; ใช้ `jsonrepair` แก้ความผิดพลาดเล็กน้อย กรองชื่อที่มีอยู่แล้ว สูงสุด 15
 
 ### 6.6 การแจ้งเตือน
-สองแหล่ง: (1) แถวใน `notifications` (`reply`, `vote`, `review_reply`) (2) **คำนวณสด ไม่เก็บ**: เรื่องที่ติดตามที่มีตอนที่ขึ้นหลังวันที่ติดตาม และผู้อ่านยังไม่ได้อ่านจบ (`newChapterStories`) ตอนที่ตั้งเวลาจึงโผล่ตรงเวลาและหายไปเมื่ออ่านแล้ว `GET /notifications/count` (กระดิ่ง) นับแถวที่ยังไม่อ่าน + เรื่องที่มีตอนออกหลัง `notificationsSeenAt`; `POST /notifications/read` ตั้ง `readAt` ของทุกแถวและอัปเดต `notificationsSeenAt`
+สองแหล่ง: (1) แถวใน `notifications` (`reply`, `vote`, `review_reply`) (2) **คำนวณสด ไม่เก็บ**: เรื่องที่ติดตามที่มีตอนที่ขึ้นหลังวันที่ติดตาม และผู้อ่านยังไม่ได้อ่านจบ (`newChapterStories`) และเรื่องใหม่ของผู้แต่งที่ติดตาม (`newAuthorStories` ชนิด `story`: ตอนแรกที่ขึ้นหลังวันที่ติดตามผู้แต่ง ไม่แสดงถ้าติดตามเรื่องนั้นเองแล้ว หรือเริ่มอ่านแล้ว) ตอนที่ตั้งเวลาจึงโผล่ตรงเวลาและหายไปเมื่ออ่านแล้ว `GET /notifications/count` (กระดิ่ง) นับแถวที่ยังไม่อ่าน + เรื่องที่มีตอนออกหลัง `notificationsSeenAt`; `POST /notifications/read` ตั้ง `readAt` ของทุกแถวและอัปเดต `notificationsSeenAt`
 
 ### 6.7 ความคืบหน้าการอ่าน
 `PUT /me/progress/:id` และ `POST /me/reads/:id` รับเฉพาะตอนที่ผู้อ่านเห็น (`isLive`) เพื่อให้ foreign key ถูกต้อง; `reading_progress` เก็บตอนล่าสุดและตำแหน่ง 0–1; `chapter_reads` เก็บตอนที่อ่านจบ ลบประวัติ (`DELETE /me/progress`) ไม่ลบเครื่องหมายอ่านจบ

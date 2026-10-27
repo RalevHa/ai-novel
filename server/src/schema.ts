@@ -126,6 +126,13 @@ export const bookmarks = pgTable('bookmarks', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.userId, t.storyId] })])
 
+// writers a signed-in reader follows: their new stories show up in the bell (worked out live, see newAuthorStories)
+export const authorFollows = pgTable('author_follows', {
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  authorId: integer('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.userId, t.authorId] })])
+
 // who changed what (role grants for now); actorId is null if that account is ever removed
 export const auditLog = pgTable('audit_log', {
   id: serial('id').primaryKey(),
