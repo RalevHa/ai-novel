@@ -169,6 +169,13 @@
       "when": 1793093587905,
       "tag": "0023_author_follows",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793093753183,
+      "tag": "0024_content_rating",
+      "breakpoints": true
     }
   ]
 }

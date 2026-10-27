@@ -4,6 +4,7 @@ import { deflateRawSync } from 'node:zlib'
 import MarkdownIt from 'markdown-it'
 import { UPLOAD_DIR } from './uploads'
 import { esc } from './xml'
+import { ratingNote, type ContentRating } from './rating'
 
 type Entry = { name: string; data: string | Uint8Array; store?: boolean }
 type Field = [value: number, bytes: 2 | 4]
@@ -61,7 +62,7 @@ const page = (title: string, body: string) => `<?xml version="1.0" encoding="UTF
 
 const CSS = 'body{line-height:1.8;margin:0 .5em}h1{font-size:1.4em;margin:1em 0}p{margin:0 0 1em;text-indent:1em}img{max-width:100%;height:auto}figure{margin:1em 0;text-align:center}figcaption{font-size:.85em;opacity:.7}'
 
-type Story = { id: number; title: string; synopsis: string; genre: string; coverImage: string }
+type Story = { id: number; title: string; synopsis: string; genre: string; coverImage: string; contentRating?: ContentRating; warnings?: string }
 type Chapter = { no: number; title: string; content: string }
 
 /** The model usually repeats the chapter title as the first line; the page heading already shows it. */
@@ -76,7 +77,7 @@ function render(c: Chapter, images: Set<string>) {
 export async function buildEpub(story: Story, chapters: Chapter[]) {
   const images = new Set<string>()
   const pages = [
-    { id: 'intro', file: 'intro.xhtml', title: story.title, html: page(story.title, `<h1>${esc(story.title)}</h1>${story.genre ? `<p>${esc(story.genre)}</p>` : ''}${story.synopsis ? md.render(story.synopsis, { images }) : ''}`) },
+    { id: 'intro', file: 'intro.xhtml', title: story.title, html: page(story.title, `<h1>${esc(story.title)}</h1>${story.genre ? `<p>${esc(story.genre)}</p>` : ''}${ratingNote(story.contentRating ?? 'general', story.warnings ?? '') ? `<p><b>${esc(ratingNote(story.contentRating ?? 'general', story.warnings ?? ''))}</b></p>` : ''}${story.synopsis ? md.render(story.synopsis, { images }) : ''}`) },
     ...chapters.map(c => {
       const title = c.title || `ตอนที่ ${c.no}`
       return { id: `ch${c.no}`, file: `ch${c.no}.xhtml`, title, html: page(title, `<h1>${esc(title)}</h1>${render(c, images)}`) }

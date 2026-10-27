@@ -68,3 +68,10 @@ test('buildEpub: package layout, escaping, title de-duplication, image handling'
   expect(text('OEBPS/ch3.xhtml')).toContain('<h1>ตอนที่ 3</h1>') // untitled chapter falls back to its number
   expect(text('OEBPS/nav.xhtml')).toContain('href="ch3.xhtml"')
 })
+
+test('buildEpub: the intro page carries the age note and warnings of a 15+/18+ story, and nothing for a general one', async () => {
+  const intro = async (story: Partial<Parameters<typeof buildEpub>[0]>) =>
+    unzip(await buildEpub({ id: 8, title: 'ก', synopsis: '', genre: '', coverImage: '', ...story }, [{ no: 1, title: 'ข', content: 'ค' }])).get('OEBPS/intro.xhtml')!.data.toString()
+  expect(await intro({ contentRating: 'adult', warnings: 'ความรุนแรง' })).toContain('เนื้อหาสำหรับผู้อ่านอายุ 18 ปีขึ้นไป · คำเตือน: ความรุนแรง')
+  expect(await intro({ contentRating: 'general', warnings: 'ความรุนแรง' })).not.toContain('เนื้อหาสำหรับ')
+})

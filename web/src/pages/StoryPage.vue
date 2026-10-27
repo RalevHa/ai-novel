@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDownUp, BookOpen, BookmarkCheck, BookmarkPlus, Check, Download, MessageSquare, Rss } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import BookCover from '../components/BookCover.vue'
+import AgeGate from '../components/AgeGate.vue'
 import ReviewSection from '../components/ReviewSection.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
@@ -13,6 +14,7 @@ import Tabs from '../components/ui/Tabs.vue'
 import { imageUrl } from '../image'
 import { fmtDate } from '../genre'
 import { lsGet } from '../ls'
+import { confirmedAge, needsGate, ratingBadge, warningTags } from '../rating'
 import { reads as loadReads } from '../readState'
 import { setTitle } from '../title'
 import { ask } from '../confirm'
@@ -27,6 +29,7 @@ const auth = useAuth()
 const load = () => ok(client.api.stories({ id: Number(id) }).get())
 const story = ref<Awaited<ReturnType<typeof load>> | null>(null), loading = ref(true), error = ref(''), newestFirst = ref(false)
 const tab = ref('toc')
+const gated = computed(() => !!story.value && needsGate(story.value.contentRating, confirmedAge.value, auth.canWrite)) // 15+/18+: contents wait for the age confirmation
 
 // tapping a character opens a dialog with everything we know about them; the card only shows a teaser
 type Character = NonNullable<typeof story.value>['characters'][number]
@@ -90,7 +93,14 @@ onMounted(async () => {
       <div class="eyebrow mb-2">{{ [story.genre, story.mood].filter(Boolean).join(' · ') || 'นิยาย' }}</div>
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">{{ story.title }}</h1>
       <p class="muted mt-1 text-sm">โดย <router-link :to="`/author/${story.authorId}`" class="-my-3 inline-block py-3 text-primary underline underline-offset-2">{{ story.authorName }}</router-link></p>
+      <div v-if="ratingBadge(story.contentRating)" class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span class="rounded-full bg-warning/20 px-2 py-0.5 font-medium">{{ ratingBadge(story.contentRating) }}</span>
+        <span v-for="w in warningTags(story.warnings)" :key="w" class="rounded-full border border-line px-2 py-0.5">{{ w }}</span>
+      </div>
       <p class="mb-6 mt-4 max-w-[62ch] whitespace-pre-wrap leading-[1.85] text-fg/85">{{ story.synopsis }}</p>
+
+      <AgeGate v-if="gated" :rating="story.contentRating" :warnings="story.warnings" class="!mx-0" />
+      <template v-else>
 
       <div ref="cta" :class="[readCount ? 'mb-5' : 'mb-10', 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] gap-2 sm:flex sm:flex-wrap sm:gap-3']">
         <Button v-if="startNo" size="lg" class="col-span-4 sm:col-span-1 sm:w-auto" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>
@@ -171,10 +181,11 @@ onMounted(async () => {
       </ol>
       <Pager v-show="tab === 'toc'" v-model="tocPage" :size="SIZE" :total="all.length" />
       <ReviewSection :story-id="Number(id)" :author-id="story.authorId" />
+      </template>
     </div>
   </div>
 
-  <template v-if="story && startNo && !ctaVisible">
+  <template v-if="story && startNo && !ctaVisible && !gated">
     <div class="h-20 md:hidden" aria-hidden="true" />
     <div class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
       <Button size="lg" class="w-full" :to="`/story/${id}/read/${startNo}`"><BookOpen class="size-5" />{{ last ? `อ่านต่อตอนที่ ${startNo}` : `เริ่มอ่านตอนที่ ${startNo}` }}</Button>

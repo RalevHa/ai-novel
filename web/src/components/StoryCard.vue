@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import BookCover from './BookCover.vue'
+import { ratingBadge, type ContentRating } from '../rating'
 import RatingLine from './RatingLine.vue'
 
 // One book on a shelf: cover, title, chapter count, author, rating. The title always reserves two lines (and is balanced) so
 // the details below line up across a row whatever the title length.
 defineProps<{
-  story: { id: number; title: string; genre?: string; mood?: string; coverImage?: string; chapterCount: number; authorName?: string; rating?: number | null; ratingCount?: number }
+  story: { id: number; title: string; genre?: string; mood?: string; coverImage?: string; chapterCount: number; authorName?: string; rating?: number | null; ratingCount?: number; contentRating?: ContentRating }
   badge?: string
 }>()
 </script>
@@ -14,6 +15,7 @@ defineProps<{
   <router-link :to="`/story/${story.id}`" class="book">
     <div class="relative">
       <BookCover :title="story.title" :genre="story.genre" :image="story.coverImage" />
+      <span v-if="ratingBadge(story.contentRating)" class="absolute right-2 top-2 rounded-full border border-warning bg-surface/95 px-2 py-0.5 text-[11px] font-bold text-fg shadow" :aria-label="`สำหรับผู้อ่านอายุ ${ratingBadge(story.contentRating)}`">{{ ratingBadge(story.contentRating) }}</span>
       <span v-if="badge" class="absolute left-2 top-2 rounded-full bg-surface/95 px-2 py-0.5 text-[11px] font-medium text-fg shadow">{{ badge }}</span>
     </div>
     <div class="line-clamp-2 mt-3 min-h-[2.75em] text-balance font-serif font-bold leading-snug">{{ story.title }}</div>

@@ -12,7 +12,7 @@ import { buildContext, excerptSql } from './context'
 import { buildEpub } from './epub'
 import { atomFeed } from './feed'
 import { loopStart } from './guard'
-import { ogPage } from './og'
+import { cardFor, ogPage } from './og'
 import { checkCode, sendCode } from './otp'
 import { imageNames, stripImages } from './markdown'
 import { markDone, nextBeat } from './outline'
@@ -40,7 +40,7 @@ const publicUser = { id: users.id, email: users.email, name: users.name, role: u
 // what the shelf shows per story; callers join users for the author's name
 const listFields = {
   id: stories.id, title: stories.title, synopsis: stories.synopsis, genre: stories.genre, mood: stories.mood, status: stories.status, createdAt: stories.createdAt, coverImage: stories.coverImage,
-  authorId: stories.authorId, authorName: users.name,
+  authorId: stories.authorId, authorName: users.name, contentRating: stories.contentRating, warnings: stories.warnings,
   chapterCount: sql<number>`(select count(*)::int from chapters where chapters.story_id = stories.id and ${visibleSql})`,
   rating: sql<number | null>`(select round(avg(reviews.rating)::numeric, 1)::float8 from reviews where reviews.story_id = stories.id)`, // null = no reviews yet
   ratingCount: sql<number>`(select count(*)::int from reviews where reviews.story_id = stories.id)`,
@@ -56,6 +56,8 @@ const storyBody = t.Object({
   systemPrompt: t.Optional(t.String()),
   outline: t.Optional(t.String()),
   status: t.Optional(t.Union([t.Literal('ongoing'), t.Literal('completed')])),
+  contentRating: t.Optional(t.Union([t.Literal('general'), t.Literal('teen'), t.Literal('adult')])),
+  warnings: t.Optional(t.String({ maxLength: 200 })),
   model: t.Optional(t.String()),
   published: t.Optional(t.Boolean()),
 })
@@ -123,17 +125,11 @@ const authRoutes = new Elysia({ prefix: '/auth' })
   .get('/me', async ({ me }) => me && (await db.select(publicUser).from(users).where(eq(users.id, me.id)))[0] || null)
 
 async function ogCard(storyId: number, no: number | undefined, request: Request) {
-  const s = await db.query.stories.findFirst({ where: and(eq(stories.id, storyId), eq(stories.published, true)), columns: { title: true, synopsis: true, coverImage: true } })
+  const s = await db.query.stories.findFirst({ where: and(eq(stories.id, storyId), eq(stories.published, true)), columns: { title: true, synopsis: true, coverImage: true, contentRating: true, warnings: true } })
   const ch = s && no !== undefined ? (await db.select({ title: chapters.title, excerpt: excerptSql(300) }).from(chapters).where(and(eq(chapters.storyId, storyId), eq(chapters.no, no), visible)))[0] : undefined
   if (!s || (no !== undefined && !ch)) return status(404, { error: 'ไม่พบข้อมูล' })
   const base = (process.env.PUBLIC_URL || new URL(request.url).origin).replace(/\/$/, '')
-  // chapters usually open with their own title line ("# title" or "ชื่อตอน: title"); the card already shows it, so start the blurb at the prose
-  const blurb = ch && (ch.title && ch.excerpt.split('\n')[0].includes(ch.title) ? ch.excerpt.replace(/^.*\n+/, '') : ch.excerpt)
-  const html = ogPage({
-    // story first: unfurlers cut long titles at the end, and the story name is the part that must survive
-    title: ch ? `${s.title} · ${ch.title || `ตอนที่ ${no}`}` : s.title, description: blurb ?? s.synopsis,
-    url: `${base}/story/${storyId}${ch ? `/read/${no}` : ''}`, image: s.coverImage ? `${base}/api/uploads/${s.coverImage}` : undefined,
-  })
+  const html = ogPage(cardFor(s, ch, no, storyId, base))
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } })
 }
 
@@ -157,7 +153,7 @@ const readerRoutes = new Elysia()
     return { id: a.id, name: a.name, bio: a.bio, stories: list }
   }, id)
   .get('/stories/:id', async ({ params, status }) => {
-    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, mood: true, status: true, coverImage: true, createdAt: true, authorId: true } })
+    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, mood: true, status: true, coverImage: true, createdAt: true, authorId: true, contentRating: true, warnings: true } })
     if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
     const [{ name: authorName }] = await db.select({ name: users.name }).from(users).where(eq(users.id, s.authorId))
     const list = await db.select({ no: chapters.no, title: chapters.title, createdAt: chapters.createdAt, commentCount: sql<number>`(select count(*)::int from comments where comments.chapter_id = chapters.id)` }).from(chapters)
@@ -169,7 +165,7 @@ const readerRoutes = new Elysia()
   // built per request from published chapters only; cache by (story, newest chapter) if downloads ever get frequent
   .get('/stories/:id/epub', async ({ params, status, request, server }) => {
     if (limited(`epub:${clientIp(request, server)}`, 20, 60 * 60_000)) return status(429, { error: 'ดาวน์โหลดบ่อยเกินไป ลองใหม่ภายหลัง' })
-    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, coverImage: true } })
+    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, genre: true, coverImage: true, contentRating: true, warnings: true } })
     if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
     const list = await db.select({ no: chapters.no, title: chapters.title, content: chapters.content }).from(chapters)
       .where(and(eq(chapters.storyId, s.id), visible)).orderBy(asc(chapters.no))
@@ -181,7 +177,7 @@ const readerRoutes = new Elysia()
   }, id)
   // newest live chapters; PUBLIC_URL (e.g. https://novel.example.com) makes the links right behind a proxy
   .get('/stories/:id/feed.xml', async ({ params, status, request }) => {
-    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true } })
+    const s = await db.query.stories.findFirst({ where: and(eq(stories.id, params.id), eq(stories.published, true)), columns: { id: true, title: true, synopsis: true, contentRating: true } })
     if (!s) return status(404, { error: 'ไม่พบข้อมูล' })
     const rows = await db.select({ no: chapters.no, title: chapters.title, excerpt: excerptSql(300), at: sql<string>`${liveAt}` }).from(chapters)
       .where(and(eq(chapters.storyId, s.id), visible)).orderBy(desc(liveAt)).limit(20)

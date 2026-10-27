@@ -5,6 +5,7 @@ import { Popover, PopoverButton, PopoverPanel } from '@headlessui/vue'
 import { ArrowUp, BookmarkCheck, BookmarkPlus, ChevronLeft, ChevronRight, Heart, List, MessageSquare, Pause, Play, Square, Type, Volume2 } from 'lucide-vue-next'
 import { client, ok } from '../api'
 import ChapterSelect from '../components/ChapterSelect.vue'
+import AgeGate from '../components/AgeGate.vue'
 import CommentSection from '../components/CommentSection.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
@@ -20,6 +21,7 @@ import { toast } from '../toast'
 import { renderChapter } from '../markdown'
 import { lsGet, lsSet } from '../ls'
 import { savePrefs } from '../prefs'
+import { confirmedAge, needsGate, type ContentRating } from '../rating'
 import { useAuth } from '../stores/auth'
 import { setTheme, theme, THEMES, type ThemeName } from '../theme'
 
@@ -30,6 +32,9 @@ const no = computed(() => Number(route.params.no))
 
 const chapter = ref<{ no: number; title: string; content: string } | null>(null)
 const storyTitle = ref('')
+// a 15+/18+ story asks the reader to confirm their age before showing (or counting) anything
+const contentRating = ref<ContentRating>('general'), warnings = ref('')
+const gated = computed(() => needsGate(contentRating.value, confirmedAge.value, auth.canWrite))
 const list = ref<{ no: number; title: string }[]>([]) // published chapters, for prev/next and the picker (drafts leave gaps)
 const nos = computed(() => list.value.map(c => c.no))
 const loading = ref(true), error = ref(''), progress = ref(0)
@@ -109,18 +114,20 @@ watch(() => [id.value, no.value], async () => {
       ok(client.api.stories({ id: Number(id.value) }).get()),
     ])
     chapter.value = c
-    storyTitle.value = s.title
+    storyTitle.value = s.title; contentRating.value = s.contentRating; warnings.value = s.warnings
     list.value = s.chapters
     lsSet(`last:${id.value}`, String(no.value))
     lsSet('lastRead', JSON.stringify({ id: Number(id.value), no: no.value }))
     setTitle(`${s.title} · ตอนที่ ${no.value}`)
     loading.value = false
     await nextTick() // the new text must be in the page before we can scroll into it
-    await startReading(Number(id.value), no.value)
+    if (!gated.value) await startReading(Number(id.value), no.value)
   } catch (e) { error.value = (e as Error).message }
   loading.value = false
   if (resume) { resume = false; await nextTick(); listen() }
 }, { immediate: true })
+
+watch(gated, async g => { if (!g && chapter.value) { await nextTick(); await startReading(Number(id.value), no.value) } }) // the reader just confirmed
 
 // ---- remembering where the reader is (position in the chapter, and which chapters are finished)
 const resumed = ref(false) // the "continuing where you left off" notice
@@ -241,7 +248,8 @@ onBeforeUnmount(() => {
   <Bar v-if="loading" />
   <p v-if="error" class="mx-auto max-w-[680px] rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">{{ error }}</p>
 
-  <div v-if="chapter" class="mx-auto max-w-[var(--reader-w,680px)] pb-20" :style="{ '--reader-size': size + 'px', '--reader-w': MEASURES[measure] + 'px', '--reader-lh': leadingValue(leading, face), '--reader-para': paraValue(para) + 'em', '--reader-indent': indent === 'on' ? '2em' : '0' }">
+  <AgeGate v-if="chapter && gated" :rating="contentRating" :warnings="warnings" />
+  <div v-else-if="chapter" class="mx-auto max-w-[var(--reader-w,680px)] pb-20" :style="{ '--reader-size': size + 'px', '--reader-w': MEASURES[measure] + 'px', '--reader-lh': leadingValue(leading, face), '--reader-para': paraValue(para) + 'em', '--reader-indent': indent === 'on' ? '2em' : '0' }">
     <div class="reader-bar sticky top-[60px] z-20 mb-6 flex items-center bg-bg py-2">
       <Button variant="ghost" :to="`/story/${id}`" class="-ml-3 px-3" aria-label="สารบัญ"><List class="size-5" /><span class="hidden sm:inline">สารบัญ</span></Button>
       <ChapterSelect :chapters="list" :model-value="no" class="mx-2 max-w-[300px] flex-1" @update:model-value="go" />
@@ -301,7 +309,7 @@ onBeforeUnmount(() => {
   </div>
 
   <!-- bottom bar: previous / current chapter / next; slides away with the header while reading down -->
-  <nav v-if="chapter" class="reader-foot fixed inset-x-0 bottom-0 z-30 h-14 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur" aria-label="เปลี่ยนตอน (แถบล่าง)">
+  <nav v-if="chapter && !gated" class="reader-foot fixed inset-x-0 bottom-0 z-30 h-14 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur" aria-label="เปลี่ยนตอน (แถบล่าง)">
     <div class="mx-auto grid h-14 max-w-xl grid-cols-[1fr_auto_1fr] items-center px-2">
       <div class="flex items-center justify-start">
         <Button variant="ghost" class="gap-1 px-2" :aria-pressed="likes.liked" :aria-label="likes.liked ? `เลิกถูกใจตอนนี้ (${likes.count})` : `ถูกใจตอนนี้ (${likes.count})`" @click="like"><Heart class="size-5" :class="likes.liked && 'fill-danger text-danger'" /><span class="min-w-[1ch] text-sm tabular-nums">{{ likes.count }}</span></Button>

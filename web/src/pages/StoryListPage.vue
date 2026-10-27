@@ -29,10 +29,12 @@ const searchEl = ref<HTMLInputElement>()
 watch(sort, v => lsSet('homeSort', v))
 watch(() => route.query.search, async v => { if (v !== undefined) { await nextTick(); searchEl.value?.focus() } }) // header search icon while already on this page
 const mine = ref(false) // only the stories this reader follows
+const hideAdult = ref(false) // leave out the 18+ stories
+const hasAdult = computed(() => stories.value.some(s => s.contentRating === 'adult'))
 const myStories = computed(() => stories.value.filter(s => marks.has(s.id)).length)
-const shown = computed(() => shelf(stories.value, { q: query.value, genre: genre.value, sort: sort.value, ids: mine.value ? new Set(marks.ids) : null }))
-const filtering = computed(() => !!query.value.trim() || genre.value !== null || mine.value)
-const clearFilters = () => { query.value = ''; genre.value = null; mine.value = false }
+const shown = computed(() => shelf(stories.value, { q: query.value, genre: genre.value, sort: sort.value, ids: mine.value ? new Set(marks.ids) : null, hideAdult: hideAdult.value }))
+const filtering = computed(() => !!query.value.trim() || genre.value !== null || mine.value || hideAdult.value)
+const clearFilters = () => { query.value = ''; genre.value = null; mine.value = false; hideAdult.value = false }
 const badge = (s: Story) => s.status === 'completed' ? 'จบแล้ว' : isRecent(s.updatedAt) ? 'อัปเดตใหม่' : ''
 const latest = computed(() => stories.value.map(s => parseDb(s.updatedAt)).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0])
 
@@ -75,10 +77,11 @@ onMounted(async () => {
     <Segmented v-model="sort" :options="SORTS" label="เรียงลำดับ" class="sm:w-[26rem]" />
   </div>
 
-  <div v-if="genres.length > 1 || myStories" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="กรองตามแนว">
+  <div v-if="genres.length > 1 || myStories || hasAdult" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="กรองตามแนว">
     <button type="button" :class="chip(genre === null && !mine)" @click="genre = null; mine = false">ทั้งหมด</button>
     <button v-if="myStories" type="button" :class="chip(mine)" :aria-pressed="mine" @click="mine = !mine">ติดตามแล้ว ({{ myStories }})</button>
     <button v-for="g in genres" :key="g" type="button" :class="chip(genre === g)" @click="genre = genre === g ? null : g">{{ g }}</button>
+    <button v-if="hasAdult" type="button" :class="chip(hideAdult)" :aria-pressed="hideAdult" @click="hideAdult = !hideAdult">ไม่รวม 18+</button>
   </div>
 
   <div v-if="loading" class="shelf" aria-hidden="true"><div v-for="i in 4" :key="i" class="aspect-[2/3] animate-pulse rounded bg-fg/10" /></div>

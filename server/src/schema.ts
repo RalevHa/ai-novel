@@ -46,6 +46,8 @@ export const stories = pgTable('stories', {
   coverImage: text('cover_image').notNull().default(''), // file name in the uploads dir; empty = generated cover
   published: boolean('published').notNull().default(false),
   status: text('status', { enum: ['ongoing', 'completed'] }).notNull().default('ongoing'), // shown to readers: still being written, or finished
+  contentRating: text('content_rating', { enum: ['general', 'teen', 'adult'] }).notNull().default('general'), // readers confirm their age before 15+/18+ stories
+  warnings: text('warnings').notNull().default(''), // content warnings, comma separated like genre ("ความรุนแรง, ภาษารุนแรง")
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 

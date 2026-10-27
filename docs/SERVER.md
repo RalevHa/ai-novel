@@ -60,7 +60,7 @@
 | | `email_codes` | รหัส 6 หลักที่มีผลอยู่ 1 รหัสต่อ (ผู้ใช้, วัตถุประสงค์: `verify`/`reset`/`change`/`delete`) เก็บเฉพาะ HMAC |
 | | `user_ai_keys` | คีย์ OpenRouter เข้ารหัส + 4 ตัวท้าย ไม่เคยถูก select ส่งออกไป |
 | | `audit_log` | ใครทำอะไรกับใคร (เปลี่ยนสิทธิ์ ระงับ/เลิกระงับ ลบความคิดเห็นของคนอื่น) |
-| เนื้อหา | `stories` | `authorId` (ไม่ cascade), `published`, `status` (`ongoing`/`completed`), `outline` (หนึ่งบรรทัด = หนึ่งตอน `✓ ` = เขียนแล้ว), `coverImage`, `model`, `systemPrompt`, `premise` |
+| เนื้อหา | `stories` | `authorId` (ไม่ cascade), `published`, `status` (`ongoing`/`completed`), `contentRating` (`general`/`teen`/`adult` ค่าเริ่มต้น `general`), `warnings` (คำเตือน คั่น `,`), `outline` (หนึ่งบรรทัด = หนึ่งตอน `✓ ` = เขียนแล้ว), `coverImage`, `model`, `systemPrompt`, `premise` |
 | | `chapters` | unique `(storyId, no)`; `published` + `publishAt` + `releasedAt`; `summary`; `views`/`finishes` (นับรวมแบบไม่ระบุตัวตน); `tokens`/`cost` |
 | | `chapter_versions` | ข้อความก่อนถูกเขียนทับทุกครั้ง (เก็บ 10 ล่าสุด) |
 | | `characters` | ตัวละครของเรื่อง `visible` = แสดงให้ผู้อ่านเห็นหรือไม่ (AI เห็นทุกตัวเสมอ) |
@@ -93,9 +93,9 @@
 | `GET /stories/:id` | ข้อมูลเรื่อง + ตอนที่เห็นได้ + ตัวละครที่ `visible` |
 | `GET /stories/:id/chapters/:no` | เนื้อหาตอน (ต้องผ่าน `visible` และเรื่องเผยแพร่) |
 | `GET /authors/:id` | โปรไฟล์ผู้แต่ง; ผู้อ่านที่ไม่มีเรื่องเผยแพร่ → 404 |
-| `GET /stories/:id/epub` | สร้าง EPUB ตอนเรียก (เฉพาะตอนที่เห็นได้) ไม่มีตอนเลย 404 |
-| `GET /stories/:id/feed.xml` | Atom ของ 20 ตอนล่าสุด ลิงก์ใช้ `PUBLIC_URL` |
-| `GET /og/story/:id[/read/:no]` | หน้า HTML สั้นที่มี Open Graph สำหรับบอตพรีวิวลิงก์ (ผู้ใช้จริงถูกเด้งไปหน้าจริง) ต้องให้ reverse proxy ชี้บอตมาที่นี่ |
+| `GET /stories/:id/epub` | สร้าง EPUB ตอนเรียก (เฉพาะตอนที่เห็นได้) ไม่มีตอนเลย 404 หน้าแนะนำพิมพ์ระดับเนื้อหา/คำเตือนของเรื่อง 15+/18+ |
+| `GET /stories/:id/feed.xml` | Atom ของ 20 ตอนล่าสุด ลิงก์ใช้ `PUBLIC_URL` เรื่อง 18+ ส่งเฉพาะชื่อตอน ไม่มีข้อความตัวอย่าง/เรื่องย่อ |
+| `GET /og/story/:id[/read/:no]` | หน้า HTML สั้นที่มี Open Graph สำหรับบอตพรีวิวลิงก์ (ผู้ใช้จริงถูกเด้งไปหน้าจริง) ต้องให้ reverse proxy ชี้บอตมาที่นี่ เรื่อง 18+ แสดงแค่ข้อความระดับอายุ/คำเตือน ไม่มีข้อความตอน เรื่องย่อ หรือปก (`cardFor` ใน `og.ts`) |
 | `POST /stories/:id/chapters/:no/view` | นับยอดเปิด/อ่านจบแบบไม่ระบุตัวตน (`{ done: true }` = อ่านจบ) ไม่เก็บ IP |
 | `GET /uploads/:name` | ส่งรูป เฉพาะชื่อที่ตรง `NAME_RE` (กัน path traversal) cache ถาวรเพราะชื่อสุ่มต่อการอัปโหลด |
 | `GET /site`, `GET /pages/:slug` | ข้อมูลติดต่อ / เนื้อหาหน้าข้อมูล (แทนที่ `{{operator}}` `{{contactEmail}}` แล้ว) |

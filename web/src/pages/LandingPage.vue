@@ -8,6 +8,7 @@ import BookCover from '../components/BookCover.vue'
 import StoryCard from '../components/StoryCard.vue'
 import Button from '../components/ui/Button.vue'
 import { kanjiFor, parseDb } from '../genre'
+import { confirmedAge, needsGate } from '../rating'
 import { useResume } from '../resume'
 import { allTags, isRecent, ratingScore } from '../shelf'
 import RatingLine from '../components/RatingLine.vue'
@@ -18,7 +19,9 @@ import { useAuth } from '../stores/auth'
 const auth = useAuth()
 const load = () => ok(client.api.stories.get())
 type Story = Awaited<ReturnType<typeof load>>[number]
-const stories = ref<Story[]>([]), loading = ref(true)
+const all = ref<Story[]>([]), loading = ref(true)
+// 18+ stories stay off the front door until the reader has confirmed their age (the shelf still lists them, with a badge)
+const stories = computed(() => all.value.filter(s => !needsGate(s.contentRating, confirmedAge.value, auth.canWrite) || s.contentRating !== 'adult'))
 
 const time = (s: Story) => parseDb(s.updatedAt)?.getTime() || parseDb(s.createdAt)?.getTime() || 0
 const latest = computed(() => [...stories.value].sort((a, b) => time(b) - time(a)).slice(0, 8))
@@ -89,7 +92,7 @@ function motion() {
 }
 
 onMounted(async () => {
-  try { stories.value = await load() } catch { /* the page still works without the book rows */ }
+  try { all.value = await load() } catch { /* the page still works without the book rows */ }
   loading.value = false
   await nextTick()
   motion()
