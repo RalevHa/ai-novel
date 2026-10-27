@@ -631,6 +631,11 @@ const meRoutes = new Elysia({ prefix: '/me' })
     .delete('/bookmarks/:id', async ({ params, me }) => { await db.delete(bookmarks).where(and(eq(bookmarks.userId, me!.id), eq(bookmarks.storyId, params.id))); return { ok: true } }, id)
     // followed writers: the ids (for the follow button), follow (only a writer, or someone with a published story, and never yourself) and unfollow
     .get('/author-follows', async ({ me }) => (await db.select({ id: authorFollows.authorId }).from(authorFollows).where(eq(authorFollows.userId, me!.id)).orderBy(desc(authorFollows.createdAt))).map(r => r.id))
+    // the followed writers with their names, for the "following" page
+    .get('/following-authors', ({ me }) => db.select({
+      id: users.id, name: users.name, followedAt: authorFollows.createdAt,
+      storyCount: sql<number>`(select count(*)::int from stories where stories.author_id = users.id and stories.published)`,
+    }).from(authorFollows).innerJoin(users, eq(users.id, authorFollows.authorId)).where(eq(authorFollows.userId, me!.id)).orderBy(desc(authorFollows.createdAt)))
     .put('/author-follows/:id', async ({ params, me, status }) => {
       if (params.id === me!.id) return status(422, { error: 'ติดตามตัวเองไม่ได้' })
       const [a] = await db.select({ role: users.role }).from(users).where(eq(users.id, params.id))

@@ -125,7 +125,7 @@
 | `GET/PUT /prefs` | การตั้งค่าอ่านข้ามอุปกรณ์ (ค่าไม่รู้จักถูกตัดทิ้ง; body ว่าง 422 เพื่อไม่ล้างค่าที่มี) |
 | `GET /progress`, `PUT /progress/:id`, `DELETE /progress[/:id]` | ตำแหน่งที่อ่านค้าง (บันทึกได้เฉพาะตอนที่ผู้อ่านเห็น) / ลบประวัติ |
 | `GET /bookmarks`, `PUT/DELETE /bookmarks/:id`, `GET /following` | ชั้นหนังสือ (ติดตามเรื่อง) และหน้าเรื่องที่ติดตามพร้อมความคืบหน้า |
-| `GET /author-follows`, `PUT/DELETE /author-follows/:id` | ติดตามผู้แต่ง (ติดตามตัวเองไม่ได้ 422; ผู้แต่งที่ไม่ใช่นักเขียนและไม่มีเรื่องเผยแพร่ 404) |
+| `GET /author-follows`, `GET /following-authors`, `PUT/DELETE /author-follows/:id` | ติดตามผู้แต่ง (`GET /author-follows` ส่งเฉพาะ id ไว้ใช้กับปุ่ม; `GET /following-authors` ส่งชื่อ จำนวนเรื่องที่เผยแพร่ และวันที่ติดตาม ไว้ใช้กับหน้า `/following`) (ติดตามตัวเองไม่ได้ 422; ผู้แต่งที่ไม่ใช่นักเขียนและไม่มีเรื่องเผยแพร่ 404) |
 | `GET /chapter-bookmarks`, `GET/PUT/DELETE …/:id[/:no]` | บุ๊กมาร์กตอน |
 | `GET /reads/:id`, `POST /reads/:id` | ตอนที่อ่านจบ |
 | `GET /notifications`, `GET /notifications/count`, `POST /notifications/read` | ดู/นับ/ทำเครื่องหมายว่าอ่านแล้ว (ดูหัวข้อ 6.6) |

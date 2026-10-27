@@ -7,12 +7,13 @@ import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
 import { fmtDate, parseDb } from '../genre'
+import { useAuthorFollows } from '../stores/authorFollows'
 import { useBookmarks } from '../stores/bookmarks'
 import { toast, toastError } from '../toast'
 
 const load = () => ok(client.api.me.following.get())
 type Row = Awaited<ReturnType<typeof load>>[number]
-const marks = useBookmarks()
+const marks = useBookmarks(), follows = useAuthorFollows()
 const rows = ref<Row[]>([]), loading = ref(true)
 
 const SORTS = [{ k: 'followed', n: 'ติดตามล่าสุด' }, { k: 'updated', n: 'อัปเดตล่าสุด' }, { k: 'unread', n: 'ยังไม่อ่านมาก' }] as const
@@ -52,9 +53,17 @@ async function unfollow(ids: number[]) {
   if (!rows.value.length) selecting.value = false
 }
 
+// followed writers: listed under the stories, each can be unfollowed on its own
+const loadAuthors = () => ok(client.api.me['following-authors'].get())
+const authors = ref<Awaited<ReturnType<typeof loadAuthors>>>([])
+async function unfollowAuthor(a: (typeof authors.value)[number]) {
+  if (!await ask({ title: `เลิกติดตาม ${a.name}?`, body: 'จะไม่ได้รับแจ้งเตือนเมื่อมีเรื่องใหม่ ติดตามใหม่ได้ทุกเมื่อ', confirmLabel: 'เลิกติดตาม' })) return
+  try { await follows.toggle(a.id); authors.value = authors.value.filter(x => x.id !== a.id); toast('เลิกติดตามแล้ว') } catch (e) { toastError(e) }
+}
+
 onMounted(async () => {
-  await marks.load() // toggle() decides follow/unfollow from the store, so it must know the shelf first
-  try { rows.value = await load() } catch (e) { toastError(e) }
+  await Promise.all([marks.load(), follows.load()]) // toggle() decides follow/unfollow from the store, so it must know the shelf first
+  try { [rows.value, authors.value] = await Promise.all([load(), loadAuthors()]) } catch (e) { toastError(e) }
   loading.value = false
 })
 
@@ -119,4 +128,19 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       </li>
     </ul>
   </template>
+
+  <section v-if="!loading && authors.length" class="mt-10" aria-labelledby="authors-h">
+    <h2 id="authors-h" class="font-serif text-xl font-bold">ผู้แต่งที่ติดตาม <span class="muted text-sm font-normal">· {{ authors.length }} คน</span></h2>
+    <p class="muted mb-3 mt-1 text-sm">มีเรื่องใหม่จากคนเหล่านี้แล้วจะแจ้งที่กระดิ่ง</p>
+    <ul class="divide-y divide-line rounded-xl border border-line bg-surface">
+      <li v-for="a in authors" :key="a.id" class="flex items-center gap-3 p-3">
+        <span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-lg font-medium text-on-primary" aria-hidden="true">{{ a.name.slice(0, 1).toUpperCase() }}</span>
+        <div class="min-w-0 flex-1">
+          <router-link :to="`/author/${a.id}`" class="block truncate font-serif font-bold hover:text-primary">{{ a.name }}</router-link>
+          <div class="muted text-xs">{{ a.storyCount }} เรื่อง · ติดตามเมื่อ {{ fmtDate(a.followedAt) }}</div>
+        </div>
+        <Button size="sm" variant="ghost" @click="unfollowAuthor(a)">เลิกติดตาม</Button>
+      </li>
+    </ul>
+  </section>
 </template>
