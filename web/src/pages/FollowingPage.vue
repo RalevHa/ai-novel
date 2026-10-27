@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { client, ok } from '../api'
 import { ask } from '../confirm'
 import BookCover from '../components/BookCover.vue'
@@ -58,10 +58,22 @@ async function unfollow(ids: number[]) {
 // followed writers: listed under the stories, each can be unfollowed on its own
 const loadAuthors = () => ok(client.api.me['following-authors'].get())
 const authors = ref<Awaited<ReturnType<typeof loadAuthors>>>([])
-async function unfollowAuthor(a: (typeof authors.value)[number]) {
-  if (!await ask({ title: `เลิกติดตาม ${a.name}?`, body: 'จะไม่ได้รับแจ้งเตือนเมื่อมีเรื่องใหม่ ติดตามใหม่ได้ทุกเมื่อ', confirmLabel: 'เลิกติดตาม' })) return
-  try { await follows.toggle(a.id); authors.value = authors.value.filter(x => x.id !== a.id); toast('เลิกติดตามแล้ว') } catch (e) { toastError(e) }
+const tickAllAuthors = () => { picked.value = picked.value.size === authors.value.length ? new Set() : new Set(authors.value.map(a => a.id)) }
+async function unfollowAuthors(ids: number[]) {
+  const first = authors.value.find(a => a.id === ids[0])
+  if (!await ask({ title: ids.length === 1 && first ? `เลิกติดตาม ${first.name}?` : `เลิกติดตาม ${ids.length} คน?`, body: 'จะไม่ได้รับแจ้งเตือนเมื่อมีเรื่องใหม่ ติดตามใหม่ได้ทุกเมื่อ', confirmLabel: 'เลิกติดตาม' })) return
+  busy.value = true
+  let failed = 0
+  for (const id of ids) {
+    try { await follows.toggle(id); authors.value = authors.value.filter(a => a.id !== id) } catch (e) { failed++; if (failed === 1) toastError(e) }
+  }
+  busy.value = false
+  if (ids.length > failed) toast(ids.length - failed === 1 ? 'เลิกติดตามแล้ว' : `เลิกติดตาม ${ids.length - failed} คนแล้ว`)
+  picked.value = new Set()
+  if (!authors.value.length) selecting.value = false
 }
+// the select mode and its ticks belong to one tab at a time
+watch(tab, () => { selecting.value = false; picked.value = new Set() })
 
 onMounted(async () => {
   await Promise.all([marks.load(), follows.load()]) // toggle() decides follow/unfollow from the store, so it must know the shelf first
@@ -78,7 +90,7 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">เรื่องที่ติดตาม</h1>
       <p v-if="!loading && rows.length" class="muted mt-1 text-sm">{{ rows.length }} เรื่อง · ยังมีตอนที่ไม่ได้อ่าน {{ counts.unread }} เรื่อง</p>
     </div>
-    <Button v-if="rows.length && tab === 'stories'" :variant="selecting ? 'solid' : 'outline'" @click="toggleMode">{{ selecting ? 'เสร็จสิ้น' : 'เลือกหลายเรื่อง' }}</Button>
+    <Button v-if="tab === 'stories' ? rows.length : authors.length" :variant="selecting ? 'solid' : 'outline'" @click="toggleMode">{{ selecting ? 'เสร็จสิ้น' : tab === 'stories' ? 'เลือกหลายเรื่อง' : 'เลือกหลายคน' }}</Button>
   </header>
 
   <Tabs v-if="!loading" v-model="tab" class="mb-4" :items="[{ value: 'stories', label: `เรื่อง (${rows.length})` }, { value: 'authors', label: `ผู้แต่ง (${authors.length})` }]" />
@@ -142,14 +154,20 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
     </div>
     <template v-else>
     <p class="muted mb-3 text-sm">มีเรื่องใหม่จากคนเหล่านี้แล้วจะแจ้งที่กระดิ่ง</p>
+    <div v-if="selecting" class="sticky top-[68px] z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm">
+      <Button variant="ghost" size="sm" @click="tickAllAuthors">{{ picked.size === authors.length ? 'ไม่เลือกเลย' : 'เลือกทั้งหมด' }}</Button>
+      <span class="muted flex-1 text-sm">เลือกแล้ว {{ picked.size }} คน</span>
+      <Button v-if="picked.size" variant="outline" size="sm" :loading="busy" @click="unfollowAuthors([...picked])">เลิกติดตามที่เลือก</Button>
+    </div>
     <ul class="divide-y divide-line rounded-xl border border-line bg-surface">
       <li v-for="a in authors" :key="a.id" class="flex items-center gap-3 p-3">
+        <input v-if="selecting" type="checkbox" :checked="picked.has(a.id)" :aria-label="`เลือก ${a.name}`" class="size-5 shrink-0 accent-primary" @change="tick(a.id)" />
         <span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-lg font-medium text-on-primary" aria-hidden="true">{{ a.name.slice(0, 1).toUpperCase() }}</span>
         <div class="min-w-0 flex-1">
           <router-link :to="`/author/${a.id}`" class="block truncate font-serif font-bold hover:text-primary">{{ a.name }}</router-link>
           <div class="muted text-xs">{{ a.storyCount }} เรื่อง · ติดตามเมื่อ {{ fmtDate(a.followedAt) }}</div>
         </div>
-        <Button size="sm" variant="ghost" @click="unfollowAuthor(a)">เลิกติดตาม</Button>
+        <Button v-if="!selecting" size="sm" variant="ghost" :disabled="busy" @click="unfollowAuthors([a.id])">เลิกติดตาม</Button>
       </li>
     </ul>
     </template>
