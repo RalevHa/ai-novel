@@ -6,6 +6,7 @@ import { client, ok } from '../api'
 import { fmtDateTime } from '../genre'
 import { useAuth } from '../stores/auth'
 import { ask } from '../confirm'
+import { flash } from '../flash'
 import { toast, toastError } from '../toast'
 import Button from './ui/Button.vue'
 import Pager from './ui/Pager.vue'
@@ -16,7 +17,9 @@ const props = defineProps<{ storyId: number; authorId: number }>()
 const MAX = 2000
 const auth = useAuth(), route = useRoute()
 
-const fetchPage = (page: number) => ok(client.api.stories({ id: props.storyId }).reviews.get({ query: { page } }))
+// arriving from a notification (?review=<id>&reply=<id>): the first load opens on the page holding that review, then it (or the reply) is rung
+const focusId = ref(Number(route.query.review) || 0), focusReply = Number(route.query.reply) || 0
+const fetchPage = (page: number) => ok(client.api.stories({ id: props.storyId }).reviews.get({ query: { page, ...(focusId.value && { focus: focusId.value }) } }))
 const data = ref<Awaited<ReturnType<typeof fetchPage>> | null>(null)
 // Eden turns timestamps into Date objects, so compare the times, not the objects (`!==` on two Dates is always true)
 const edited = (r: { createdAt: string | Date; updatedAt: string | Date }) => +new Date(r.updatedAt) !== +new Date(r.createdAt)
@@ -25,6 +28,10 @@ const page = ref(1), rating = ref(0), text = ref(''), busy = ref(false)
 async function load() {
   try {
     data.value = await fetchPage(page.value); page.value = data.value.page
+    if (focusId.value) {
+      const target = focusId.value; focusId.value = 0 // later loads (paging, saving) are plain
+      if (!(focusReply && await flash(`review-reply-${focusReply}`))) await flash(`review-${target}`)
+    }
     // the form always shows the reader's own review, so saving again is an edit
     rating.value = data.value.mine?.rating ?? rating.value; text.value = data.value.mine?.body ?? text.value
   } catch (e) { toastError(e) }
@@ -114,7 +121,7 @@ async function remove(id: number) {
 
     <p v-if="data && !data.items.length" class="muted mt-6 text-sm">ยังไม่มีรีวิว เป็นคนแรกที่รีวิวเรื่องนี้</p>
     <ul v-else-if="data" class="mt-6 divide-y divide-line">
-      <li v-for="r in data.items" :key="r.id" class="py-3">
+      <li v-for="r in data.items" :id="`review-${r.id}`" :key="r.id" class="py-3">
         <div class="flex flex-wrap items-center gap-x-2 text-sm">
           <span class="font-medium">{{ r.userName }}</span>
           <span class="flex text-primary" role="img" :aria-label="`${r.rating} ดาว`"><Star v-for="n in 5" :key="n" :class="['size-3.5', n <= r.rating && 'fill-current']" aria-hidden="true" /></span>
@@ -130,7 +137,7 @@ async function remove(id: number) {
           <Button v-if="auth.user" variant="ghost" size="sm" @click="replyingTo = replyingTo === r.id ? null : r.id; replyText = ''">ตอบกลับ</Button>
         </div>
         <ul v-if="r.replies.length" class="mt-2 space-y-3 border-l-2 border-line pl-3">
-          <li v-for="p in r.replies" :key="p.id">
+          <li v-for="p in r.replies" :id="`review-reply-${p.id}`" :key="p.id">
             <div class="flex flex-wrap items-center gap-x-2 text-sm">
               <span class="font-medium">{{ p.userName }}</span>
               <span v-if="p.isAuthor" class="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary">ผู้แต่ง</span>

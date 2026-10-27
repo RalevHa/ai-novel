@@ -6,6 +6,7 @@ export type ShelfStory = {
   id: number; title: string; synopsis?: string; genre?: string; mood?: string
   chapterCount: number; createdAt: string | Date | null; updatedAt: string | Date | null
   rating?: number | null; ratingCount?: number // average stars (null = no reviews) and how many reviews
+  contentRating?: 'general' | 'teen' | 'adult'
 }
 
 export const SORTS = [{ k: 'updated', n: 'ล่าสุด' }, { k: 'newest', n: 'ใหม่สุด' }, { k: 'chapters', n: 'ตอนมาก' }, { k: 'rating', n: 'คะแนน' }] as const
@@ -30,7 +31,7 @@ export const allTags = (stories: { genre?: string }[]) => {
 }
 
 /** Stories matching the text, genre and (optionally) an id whitelist, in the chosen order. Does not touch the input. */
-export function shelf<T extends ShelfStory>(all: T[], o: { q: string; genre: string | null; sort: Sort; ids?: Set<number> | null }): T[] {
+export function shelf<T extends ShelfStory>(all: T[], o: { q: string; genre: string | null; sort: Sort; ids?: Set<number> | null; hideAdult?: boolean }): T[] {
   const q = o.q.trim().toLowerCase()
   const hit = (s: T) => !q || [s.title, s.genre, s.mood, s.synopsis].some(f => f?.toLowerCase().includes(q))
   const updated = (s: T) => time(s.updatedAt) || time(s.createdAt)
@@ -40,7 +41,7 @@ export function shelf<T extends ShelfStory>(all: T[], o: { q: string; genre: str
     chapters: (a, b) => b.chapterCount - a.chapterCount || updated(b) - updated(a),
     rating: (a, b) => ratingScore(b) - ratingScore(a) || (b.ratingCount ?? 0) - (a.ratingCount ?? 0) || updated(b) - updated(a),
   }
-  return all.filter(s => (!o.genre || genreTags(s.genre).some(t => t.toLowerCase() === o.genre!.toLowerCase())) && (!o.ids || o.ids.has(s.id)) && hit(s)).sort(order[o.sort])
+  return all.filter(s => (!o.genre || genreTags(s.genre).some(t => t.toLowerCase() === o.genre!.toLowerCase())) && (!o.ids || o.ids.has(s.id)) && !(o.hideAdult && s.contentRating === 'adult') && hit(s)).sort(order[o.sort])
 }
 
 /** Updated within the last `hours` (the "new chapter" badge). */

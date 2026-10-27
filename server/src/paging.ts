@@ -9,3 +9,6 @@ export function paging(q: { page?: number; size?: number }, total: number, start
   const page = Math.min(q.page ?? (start === 'last' ? pages : 1), pages)
   return { page, size, offset: (page - 1) * size }
 }
+
+/** The page an item lands on when `ahead` items sort before it (used to open a list at one specific comment or review). */
+export const pageOf = (ahead: number, size: number) => Math.floor(ahead / size) + 1

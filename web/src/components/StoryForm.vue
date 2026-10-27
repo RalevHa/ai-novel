@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { MODELS } from '../models'
+import { RATING_OPTIONS, type ContentRating } from '../rating'
 import Button from './ui/Button.vue'
 import ComboInput from './ui/ComboInput.vue'
 import Segmented from './ui/Segmented.vue'
@@ -11,12 +12,13 @@ import Textarea from './ui/Textarea.vue'
 export type StoryInput = {
   title: string; synopsis: string; genre: string; mood: string
   premise: string; outline: string; systemPrompt: string; model: string; published: boolean; status: 'ongoing' | 'completed'
+  contentRating: ContentRating; warnings: string
 }
 const props = defineProps<{ initial?: Partial<StoryInput>; busy?: boolean; submitLabel?: string }>()
 const emit = defineEmits<{ save: [StoryInput] }>()
 
 const f = reactive<StoryInput>({
-  title: '', synopsis: '', genre: '', mood: '', premise: '', outline: '', systemPrompt: '', model: '', published: false, status: 'ongoing',
+  title: '', synopsis: '', genre: '', mood: '', premise: '', outline: '', systemPrompt: '', model: '', published: false, status: 'ongoing', contentRating: 'general', warnings: '',
   ...props.initial,
 })
 const models = MODELS
@@ -31,6 +33,12 @@ const STATUSES = [{ k: 'ongoing', n: 'กำลังเขียน' }, { k: 'c
       <Input v-model="f.genre" label="แนว" placeholder="ใส่ได้หลายแนว คั่นด้วย , เช่น Isekai, Slice of Life" />
       <Input v-model="f.mood" label="ความรู้สึกที่ต้องการ" placeholder="เช่น อบอุ่นหัวใจ" />
     </div>
+    <div class="mb-4">
+      <div class="mb-1.5 text-sm font-medium">ระดับเนื้อหา (ผู้อ่านเห็น)</div>
+      <Segmented :model-value="f.contentRating" :options="RATING_OPTIONS" label="ระดับเนื้อหา" class="max-w-xs" @update:model-value="f.contentRating = $event as ContentRating" />
+      <p class="muted mt-1.5 text-xs">15+ และ 18+ ให้ผู้อ่านกดยืนยันอายุก่อนอ่าน และ 18+ จะไม่แสดงข้อความหรือปกในการ์ดตัวอย่างลิงก์และ RSS</p>
+    </div>
+    <Input v-model="f.warnings" label="คำเตือนเนื้อหา" placeholder="คั่นด้วย , เช่น ความรุนแรง, ภาษารุนแรง" :maxlength="200" />
     <Textarea v-model="f.premise" label="พล็อต / ตัวละครตั้งต้น (ส่งให้ AI เท่านั้น)" :rows="4" />
     <Textarea v-model="f.outline" label="แผนเรื่อง (หนึ่งบรรทัดต่อหนึ่งตอน)" :rows="5" placeholder="พระเอกตื่นในต่างโลก&#10;พบเพื่อนร่วมทางคนแรก&#10;ต่อสู้กับมังกร" />
     <p class="muted -mt-2 mb-4 text-xs">เลือก "เขียนตามแผนเรื่อง" ตอนสั่งเขียน ระบบจะใช้บรรทัดแรกที่ยังไม่มี ✓ เป็นคำสั่ง แล้วใส่ ✓ ให้เมื่อเขียนครบตอน</p>

@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { client, ok } from '../api'
 import { ask } from '../confirm'
 import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
+import Tabs from '../components/ui/Tabs.vue'
 import { fmtDate, parseDb } from '../genre'
+import { useAuthorFollows } from '../stores/authorFollows'
 import { useBookmarks } from '../stores/bookmarks'
 import { toast, toastError } from '../toast'
 
 const load = () => ok(client.api.me.following.get())
 type Row = Awaited<ReturnType<typeof load>>[number]
-const marks = useBookmarks()
+const marks = useBookmarks(), follows = useAuthorFollows()
 const rows = ref<Row[]>([]), loading = ref(true)
+const tab = ref<'stories' | 'authors'>('stories')
 
 const SORTS = [{ k: 'followed', n: 'ติดตามล่าสุด' }, { k: 'updated', n: 'อัปเดตล่าสุด' }, { k: 'unread', n: 'ยังไม่อ่านมาก' }] as const
 type Sort = (typeof SORTS)[number]['k']
@@ -52,9 +55,29 @@ async function unfollow(ids: number[]) {
   if (!rows.value.length) selecting.value = false
 }
 
+// followed writers: listed under the stories, each can be unfollowed on its own
+const loadAuthors = () => ok(client.api.me['following-authors'].get())
+const authors = ref<Awaited<ReturnType<typeof loadAuthors>>>([])
+const tickAllAuthors = () => { picked.value = picked.value.size === authors.value.length ? new Set() : new Set(authors.value.map(a => a.id)) }
+async function unfollowAuthors(ids: number[]) {
+  const first = authors.value.find(a => a.id === ids[0])
+  if (!await ask({ title: ids.length === 1 && first ? `เลิกติดตาม ${first.name}?` : `เลิกติดตาม ${ids.length} คน?`, body: 'จะไม่ได้รับแจ้งเตือนเมื่อมีเรื่องใหม่ ติดตามใหม่ได้ทุกเมื่อ', confirmLabel: 'เลิกติดตาม' })) return
+  busy.value = true
+  let failed = 0
+  for (const id of ids) {
+    try { await follows.toggle(id); authors.value = authors.value.filter(a => a.id !== id) } catch (e) { failed++; if (failed === 1) toastError(e) }
+  }
+  busy.value = false
+  if (ids.length > failed) toast(ids.length - failed === 1 ? 'เลิกติดตามแล้ว' : `เลิกติดตาม ${ids.length - failed} คนแล้ว`)
+  picked.value = new Set()
+  if (!authors.value.length) selecting.value = false
+}
+// the select mode and its ticks belong to one tab at a time
+watch(tab, () => { selecting.value = false; picked.value = new Set() })
+
 onMounted(async () => {
-  await marks.load() // toggle() decides follow/unfollow from the store, so it must know the shelf first
-  try { rows.value = await load() } catch (e) { toastError(e) }
+  await Promise.all([marks.load(), follows.load()]) // toggle() decides follow/unfollow from the store, so it must know the shelf first
+  try { [rows.value, authors.value] = await Promise.all([load(), loadAuthors()]) } catch (e) { toastError(e) }
   loading.value = false
 })
 
@@ -67,11 +90,13 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">เรื่องที่ติดตาม</h1>
       <p v-if="!loading && rows.length" class="muted mt-1 text-sm">{{ rows.length }} เรื่อง · ยังมีตอนที่ไม่ได้อ่าน {{ counts.unread }} เรื่อง</p>
     </div>
-    <Button v-if="rows.length" :variant="selecting ? 'solid' : 'outline'" @click="toggleMode">{{ selecting ? 'เสร็จสิ้น' : 'เลือกหลายเรื่อง' }}</Button>
+    <Button v-if="tab === 'stories' ? rows.length : authors.length" :variant="selecting ? 'solid' : 'outline'" @click="toggleMode">{{ selecting ? 'เสร็จสิ้น' : tab === 'stories' ? 'เลือกหลายเรื่อง' : 'เลือกหลายคน' }}</Button>
   </header>
 
+  <Tabs v-if="!loading" v-model="tab" class="mb-4" :items="[{ value: 'stories', label: `เรื่อง (${rows.length})` }, { value: 'authors', label: `ผู้แต่ง (${authors.length})` }]" />
   <Bar v-if="loading" />
-  <div v-else-if="!rows.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
+  <template v-else-if="tab === 'stories'">
+  <div v-if="!rows.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
     <p class="font-serif text-lg font-bold">ยังไม่ได้ติดตามเรื่องไหน</p>
     <p class="muted mt-1 text-sm">กด "ติดตาม" ที่หน้าเรื่อง แล้วเรื่องนั้นจะมารวมอยู่ที่นี่</p>
     <Button to="/story" class="mt-5">ไปเลือกนิยาย</Button>
@@ -119,4 +144,32 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       </li>
     </ul>
   </template>
+  </template>
+
+  <section v-else aria-label="ผู้แต่งที่ติดตาม">
+    <div v-if="!authors.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
+      <p class="font-serif text-lg font-bold">ยังไม่ได้ติดตามผู้แต่งคนไหน</p>
+      <p class="muted mt-1 text-sm">กด "ติดตามผู้แต่ง" ที่หน้าผู้แต่ง แล้วเมื่อเขามีเรื่องใหม่จะแจ้งที่กระดิ่ง</p>
+      <Button to="/story" class="mt-5">ไปเลือกนิยาย</Button>
+    </div>
+    <template v-else>
+    <p class="muted mb-3 text-sm">มีเรื่องใหม่จากคนเหล่านี้แล้วจะแจ้งที่กระดิ่ง</p>
+    <div v-if="selecting" class="sticky top-[68px] z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2 shadow-sm">
+      <Button variant="ghost" size="sm" @click="tickAllAuthors">{{ picked.size === authors.length ? 'ไม่เลือกเลย' : 'เลือกทั้งหมด' }}</Button>
+      <span class="muted flex-1 text-sm">เลือกแล้ว {{ picked.size }} คน</span>
+      <Button v-if="picked.size" variant="outline" size="sm" :loading="busy" @click="unfollowAuthors([...picked])">เลิกติดตามที่เลือก</Button>
+    </div>
+    <ul class="divide-y divide-line rounded-xl border border-line bg-surface">
+      <li v-for="a in authors" :key="a.id" class="flex items-center gap-3 p-3">
+        <input v-if="selecting" type="checkbox" :checked="picked.has(a.id)" :aria-label="`เลือก ${a.name}`" class="size-5 shrink-0 accent-primary" @change="tick(a.id)" />
+        <span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-lg font-medium text-on-primary" aria-hidden="true">{{ a.name.slice(0, 1).toUpperCase() }}</span>
+        <div class="min-w-0 flex-1">
+          <router-link :to="`/author/${a.id}`" class="block truncate font-serif font-bold hover:text-primary">{{ a.name }}</router-link>
+          <div class="muted text-xs">{{ a.storyCount }} เรื่อง · ติดตามเมื่อ {{ fmtDate(a.followedAt) }}</div>
+        </div>
+        <Button v-if="!selecting" size="sm" variant="ghost" :disabled="busy" @click="unfollowAuthors([a.id])">เลิกติดตาม</Button>
+      </li>
+    </ul>
+    </template>
+  </section>
 </template>

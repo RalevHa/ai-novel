@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { client, ok } from '../api'
 import { useAuth } from '../stores/auth'
 import { ask } from '../confirm'
+import { flash } from '../flash'
 import { toast, toastError } from '../toast'
 import CommentItem, { type CommentView } from './CommentItem.vue'
 import Button from './ui/Button.vue'
@@ -22,15 +23,24 @@ const chapter = () => client.api.stories({ id: props.storyId }).chapters({ no: p
 type Sort = 'new' | 'top' | 'replies'
 const SORTS = [{ k: 'new', n: 'ใหม่ล่าสุด' }, { k: 'top', n: 'ยอดนิยม' }, { k: 'replies', n: 'ตอบกลับมากสุด' }] as const
 const sort = ref<Sort>('new')
-const fetchPage = (page: number) => ok(chapter().comments.get({ query: { page, sort: sort.value } }))
+// arriving from a notification (?c=<comment id>): the first load opens on the page holding that comment, then it is rung
+const focusId = ref(Number(route.query.c) || 0)
+const fetchPage = (page: number) => ok(chapter().comments.get({ query: { page, sort: sort.value, ...(focusId.value && { focus: focusId.value }) } }))
 const data = ref<Awaited<ReturnType<typeof fetchPage>> | null>(null)
 const page = ref(1), text = ref(''), busy = ref(false), open = ref(!props.collapsible || !!props.autoOpen)
 // the reply box open under one thread; answering a reply is also posted to that thread, with the person's name in front
 const replyTo = ref<{ thread: number; parentId: number } | null>(null), replyText = ref('')
+const root = ref<HTMLElement | null>(null)
 const remaining = computed(() => MAX - text.value.length)
 
 async function load() {
-  try { data.value = await fetchPage(page.value); page.value = data.value.page } catch (e) { toastError(e) }
+  try {
+    data.value = await fetchPage(page.value); page.value = data.value.page
+    if (focusId.value) {
+      const target = focusId.value; focusId.value = 0 // later loads (paging, sorting) are plain
+      if (!await flash(`comment-${target}`)) root.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) // the comment is gone: show the section instead
+    }
+  } catch (e) { toastError(e) }
 }
 watch(() => [props.storyId, props.no], () => { page.value = 1; data.value = null; load() }, { immediate: true })
 watch(page, load)
@@ -87,9 +97,8 @@ async function sendReport() {
 }
 
 // arriving from a notification: bring the comments into view once they have loaded
-const root = ref<HTMLElement | null>(null)
 onMounted(async () => {
-  if (!props.autoOpen) return
+  if (!props.autoOpen || focusId.value) return // with a target comment, load() does the scrolling
   await new Promise(r => setTimeout(r, 400)) // the reader page settles its own scroll position first
   await nextTick(); root.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 })
@@ -125,10 +134,10 @@ async function remove(id: number) {
       <div v-if="data && data.total > 1" class="mt-6 max-w-sm"><Segmented :model-value="sort" :options="SORTS" label="เรียงความคิดเห็น" @update:model-value="sort = $event as Sort" /></div>
       <p v-if="data && !data.items.length" class="muted mt-6 text-sm">ยังไม่มีความคิดเห็น</p>
       <ul v-else-if="data" class="mt-4 divide-y divide-line">
-        <li v-for="c in data.items" :key="c.id" class="py-3">
+        <li v-for="c in data.items" :id="`comment-${c.id}`" :key="c.id" class="py-3">
           <CommentItem :c="c" :save="t => saveEdit(c, t)" @report="startReport(c)" @vote="vote(c, $event)" @reply="startReply(c.id, c, false)" @remove="remove(c.id)" />
           <ul v-if="c.replies.length" class="ml-4 mt-2 space-y-3 border-l border-line pl-3 sm:ml-11">
-            <li v-for="r in c.replies" :key="r.id">
+            <li v-for="r in c.replies" :id="`comment-${r.id}`" :key="r.id">
               <CommentItem :c="r" :save="t => saveEdit(r, t)" @report="startReport(r)" @vote="vote(r, $event)" @reply="startReply(c.id, r, true)" @remove="remove(r.id)" />
             </li>
           </ul>

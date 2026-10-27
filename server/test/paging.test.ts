@@ -1,5 +1,12 @@
 import { expect, test } from 'bun:test'
-import { paging } from '../src/paging'
+import { pageOf, paging } from '../src/paging'
+
+test('pageOf', () => {
+  expect(pageOf(0, 20)).toBe(1) // newest item is on page 1
+  expect(pageOf(19, 20)).toBe(1)
+  expect(pageOf(20, 20)).toBe(2)
+  expect(pageOf(45, 10)).toBe(5)
+})
 
 test('paging', () => {
   expect(paging({}, 120, 'first')).toEqual({ page: 1, size: 50, offset: 0 })

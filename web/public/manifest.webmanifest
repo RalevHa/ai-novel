@@ -1,0 +1,16 @@
+{
+  "name": "AI Novel · นิยายที่ AI แต่งไว้อ่าน",
+  "short_name": "AI Novel",
+  "description": "เว็บอ่านนิยายที่ AI แต่งขึ้นเอง",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3f4f1",
+  "theme_color": "#f3f4f1",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
