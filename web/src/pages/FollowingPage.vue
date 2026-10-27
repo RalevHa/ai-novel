@@ -6,6 +6,7 @@ import BookCover from '../components/BookCover.vue'
 import Bar from '../components/ui/Bar.vue'
 import Button from '../components/ui/Button.vue'
 import Segmented from '../components/ui/Segmented.vue'
+import Tabs from '../components/ui/Tabs.vue'
 import { fmtDate, parseDb } from '../genre'
 import { useAuthorFollows } from '../stores/authorFollows'
 import { useBookmarks } from '../stores/bookmarks'
@@ -15,6 +16,7 @@ const load = () => ok(client.api.me.following.get())
 type Row = Awaited<ReturnType<typeof load>>[number]
 const marks = useBookmarks(), follows = useAuthorFollows()
 const rows = ref<Row[]>([]), loading = ref(true)
+const tab = ref<'stories' | 'authors'>('stories')
 
 const SORTS = [{ k: 'followed', n: 'ติดตามล่าสุด' }, { k: 'updated', n: 'อัปเดตล่าสุด' }, { k: 'unread', n: 'ยังไม่อ่านมาก' }] as const
 type Sort = (typeof SORTS)[number]['k']
@@ -76,11 +78,13 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       <h1 class="font-serif text-[clamp(26px,4vw,38px)] font-bold leading-snug">เรื่องที่ติดตาม</h1>
       <p v-if="!loading && rows.length" class="muted mt-1 text-sm">{{ rows.length }} เรื่อง · ยังมีตอนที่ไม่ได้อ่าน {{ counts.unread }} เรื่อง</p>
     </div>
-    <Button v-if="rows.length" :variant="selecting ? 'solid' : 'outline'" @click="toggleMode">{{ selecting ? 'เสร็จสิ้น' : 'เลือกหลายเรื่อง' }}</Button>
+    <Button v-if="rows.length && tab === 'stories'" :variant="selecting ? 'solid' : 'outline'" @click="toggleMode">{{ selecting ? 'เสร็จสิ้น' : 'เลือกหลายเรื่อง' }}</Button>
   </header>
 
+  <Tabs v-if="!loading" v-model="tab" class="mb-4" :items="[{ value: 'stories', label: `เรื่อง (${rows.length})` }, { value: 'authors', label: `ผู้แต่ง (${authors.length})` }]" />
   <Bar v-if="loading" />
-  <div v-else-if="!rows.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
+  <template v-else-if="tab === 'stories'">
+  <div v-if="!rows.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
     <p class="font-serif text-lg font-bold">ยังไม่ได้ติดตามเรื่องไหน</p>
     <p class="muted mt-1 text-sm">กด "ติดตาม" ที่หน้าเรื่อง แล้วเรื่องนั้นจะมารวมอยู่ที่นี่</p>
     <Button to="/story" class="mt-5">ไปเลือกนิยาย</Button>
@@ -128,10 +132,16 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
       </li>
     </ul>
   </template>
+  </template>
 
-  <section v-if="!loading && authors.length" class="mt-10" aria-labelledby="authors-h">
-    <h2 id="authors-h" class="font-serif text-xl font-bold">ผู้แต่งที่ติดตาม <span class="muted text-sm font-normal">· {{ authors.length }} คน</span></h2>
-    <p class="muted mb-3 mt-1 text-sm">มีเรื่องใหม่จากคนเหล่านี้แล้วจะแจ้งที่กระดิ่ง</p>
+  <section v-else aria-label="ผู้แต่งที่ติดตาม">
+    <div v-if="!authors.length" class="rounded-xl border border-line bg-surface px-6 py-10 text-center">
+      <p class="font-serif text-lg font-bold">ยังไม่ได้ติดตามผู้แต่งคนไหน</p>
+      <p class="muted mt-1 text-sm">กด "ติดตามผู้แต่ง" ที่หน้าผู้แต่ง แล้วเมื่อเขามีเรื่องใหม่จะแจ้งที่กระดิ่ง</p>
+      <Button to="/story" class="mt-5">ไปเลือกนิยาย</Button>
+    </div>
+    <template v-else>
+    <p class="muted mb-3 text-sm">มีเรื่องใหม่จากคนเหล่านี้แล้วจะแจ้งที่กระดิ่ง</p>
     <ul class="divide-y divide-line rounded-xl border border-line bg-surface">
       <li v-for="a in authors" :key="a.id" class="flex items-center gap-3 p-3">
         <span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary text-lg font-medium text-on-primary" aria-hidden="true">{{ a.name.slice(0, 1).toUpperCase() }}</span>
@@ -142,5 +152,6 @@ const chip = (on: boolean) => ['inline-flex min-h-11 items-center rounded-full b
         <Button size="sm" variant="ghost" @click="unfollowAuthor(a)">เลิกติดตาม</Button>
       </li>
     </ul>
+    </template>
   </section>
 </template>
